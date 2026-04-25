@@ -229,11 +229,17 @@
     }
     .od-actions { display: flex; gap: 10px; }
     .od-btn-done {
-      padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      padding: 9px 14px; border-radius: 8px;
       border: 1.5px solid var(--c-green); color: var(--c-green); transition: all .2s;
-      display: inline-flex; align-items: center; gap: 5px;
+      display: inline-flex; align-items: center;
     }
     .od-btn-done:hover { background: var(--c-green); color: #fff; }
+    .od-btn-pending {
+      padding: 9px 14px; border-radius: 8px;
+      border: 1.5px solid var(--c-orange); color: var(--c-orange); transition: all .2s;
+      display: inline-flex; align-items: center;
+    }
+    .od-btn-pending:hover { background: var(--c-orange); color: #fff; }
     .od-btn-delete {
       padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
       border: 1.5px solid var(--border); color: var(--text-muted); transition: all .2s;
@@ -380,9 +386,16 @@
       background: var(--surface); border-radius: var(--radius);
       padding: 14px 18px; box-shadow: var(--shadow); border: 1px solid var(--border);
       display: flex; align-items: center; gap: 14px;
-      transition: box-shadow .2s;
+      transition: box-shadow .2s; cursor: pointer;
     }
     .detail-customer-card:hover { box-shadow: var(--shadow-lg); }
+    .cust-back-btn {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 12px;
+      padding: 7px 12px; border-radius: 8px; border: none; background: none;
+      font-size: 13px; font-weight: 600; color: var(--text-muted);
+      cursor: pointer; transition: background .2s;
+    }
+    .cust-back-btn:hover { background: var(--border); color: var(--text); }
     .detail-cust-avatar {
       width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
       background: linear-gradient(135deg, #f9a8d4, #c084fc);
@@ -639,6 +652,8 @@
     .orders-table tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
     .orders-table tbody tr:last-child { border-bottom: none; }
     .orders-table tbody tr:hover { background: #f8f9fc; }
+    .orders-table tbody tr.row-done { background: #f0fdf4; }
+    .orders-table tbody tr.row-done:hover { background: #dcfce7; }
     .orders-table td { padding: 14px 18px; font-size: 13.5px; vertical-align: middle; }
     .td-num { color: var(--text-muted); font-size: 12px; font-weight: 600; }
     .td-name { font-weight: 600; color: var(--text); }
@@ -657,11 +672,17 @@
     .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
     .action-btns { display: flex; gap: 8px; }
     .btn-done {
-      font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px;
+      padding: 5px 10px; border-radius: 6px;
       border: 1.5px solid var(--c-green); color: var(--c-green); transition: all .2s;
-      display: inline-flex; align-items: center; gap: 4px;
+      display: inline-flex; align-items: center;
     }
     .btn-done:hover { background: var(--c-green); color: #fff; }
+    .btn-pending {
+      padding: 5px 10px; border-radius: 6px;
+      border: 1.5px solid var(--c-orange); color: var(--c-orange); transition: all .2s;
+      display: inline-flex; align-items: center;
+    }
+    .btn-pending:hover { background: var(--c-orange); color: #fff; }
     .btn-delete {
       font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px;
       border: 1.5px solid var(--border); color: var(--text-muted); transition: all .2s;
@@ -895,6 +916,15 @@
     }
     .od-wa-btn:hover { background: #25d366; color: #fff; border-color: #25d366; }
 
+    .od-copy-btn {
+      margin-left: 6px; flex-shrink: 0;
+      width: 34px; height: 34px; border-radius: 50%;
+      background: #e8eaf6; border: 1.5px solid #c5cae9; color: #5c6bc0;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all .2s;
+    }
+    .od-copy-btn:hover { background: #5c6bc0; color: #fff; border-color: #5c6bc0; }
+
     .wa-toast {
       position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px);
       background: #1a1a1a; color: #fff; padding: 12px 22px; border-radius: 24px;
@@ -997,33 +1027,29 @@
     .inv-meta-right { text-align: right; }
 
     /* ── TABLE ── */
-    .inv-table { width: 100%; border-collapse: separate; border-spacing: 0; border-radius: 14px; overflow: hidden; border: 1.5px solid #f2dde8; }
+    .inv-table { width: 100%; border-collapse: separate; border-spacing: 0; }
     .inv-table thead th {
-      background: linear-gradient(135deg, #7b1f5c, #a0316e);
-      color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
-      padding: 14px 18px; text-align: left;
+      background: #7b1f5c;
+      color: #fff; font-size: 11px; font-weight: 700; text-transform: uppercase; text-align: center;
+      padding: 14px 18px;
     }
-    .inv-table thead th:last-child { text-align: right; }
-    .inv-table thead th:not(:last-child) { border-right: 1px solid rgba(255,255,255,.15); }
     .inv-table tbody tr { transition: background .15s; }
     .inv-table tbody tr:nth-child(even) { background: #fdf5f8; }
     .inv-table tbody tr:nth-child(odd)  { background: #fff; }
     .inv-table tbody td {
-      padding: 15px 18px; font-size: 14px; color: var(--text);
-      border-bottom: 1px solid #f9e5ee;
+      padding: 16px 18px; font-size: 14px; color: var(--text);
     }
-    .inv-table tbody td:not(:last-child) { border-right: 1px solid #f9e5ee; }
     .inv-td-platform { font-weight: 700; color: #5a1040; }
-    .inv-td-cost { color: #888; font-size: 13px; }
+    .inv-td-cost { color: #999; font-size: 13px; text-align: center; }
     .inv-td-sell { text-align: right; font-weight: 800; color: #7b1f5c; font-size: 15px; }
-    .inv-curr { font-size: .8em; font-weight: 500; opacity: .6; }
+    .inv-curr { font-size: .78em; font-weight: 500; opacity: .55; }
     .inv-total-row td {
       padding: 16px 18px;
-      background: linear-gradient(135deg, #7b1f5c, #a0316e) !important;
-      border-bottom: none !important; border-right: none !important;
+      background: linear-gradient(90deg, #fce4ec 0%, #fce4ec 50%, #fce4ec 100%) !important;
+      border-bottom: none !important;
     }
-    .inv-total-label { font-size: 11.5px; font-weight: 700; color: rgba(255,255,255,.85); text-transform: uppercase; letter-spacing: .8px; }
-    .inv-total-val { text-align: right; font-size: 22px; font-weight: 800; color: #fff; }
+    .inv-total-label { font-size: 12px; font-weight: 700; color: #d4789a; text-transform: uppercase; }
+    .inv-total-val { text-align: right; font-size: 22px; font-weight: 800; color: #7b1f5c; }
     .inv-empty { text-align: center; padding: 36px; color: var(--text-muted); font-size: 13px; }
 
     /* ── Arabic font fix ── */
@@ -1033,11 +1059,14 @@
     [dir="rtl"] .inv-meta,
     [dir="rtl"] .inv-footer { font-family: 'Cairo', 'Inter', sans-serif; }
     [dir="rtl"] .inv-brand-script { font-family: 'Dancing Script', cursive; }
-    [dir="rtl"] .inv-table thead th { text-align: right; }
-    [dir="rtl"] .inv-table thead th:last-child { text-align: left; }
+    [dir="rtl"] .inv-table thead th { text-align: center; }
     [dir="rtl"] .inv-td-sell { text-align: left; }
     [dir="rtl"] .inv-total-val { text-align: left; }
     [dir="rtl"] .inv-meta-right { text-align: left; }
+    [dir="rtl"] .inv-tagline,
+    [dir="rtl"] .inv-title,
+    [dir="rtl"] .inv-meta-label,
+    [dir="rtl"] .inv-footer-sub { letter-spacing: 0 !important; }
 
     .inv-footer {
       background: linear-gradient(135deg, #fce4ec, #fdf5f8);
@@ -1278,6 +1307,9 @@
         <div class="od-field-label" data-i18n="phone_label">Phone Number</div>
         <div class="od-field-value" id="odPhone"></div>
       </div>
+      <button class="od-copy-btn" onclick="copyInvoiceImage()" title="Copy invoice image">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
       <button class="od-wa-btn" onclick="shareInvoiceWhatsApp()" title="Share via WhatsApp">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
       </button>
@@ -1317,9 +1349,11 @@
         <button class="od-btn-invoice" onclick="openInvoice()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         </button>
-        <button class="od-btn-done" id="odMarkDone" style="display:none">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          <span data-i18n="mark_done">Mark Done</span>
+        <button class="od-btn-done" id="odMarkDone" style="display:none" title="Mark Done">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        </button>
+        <button class="od-btn-pending" id="odMarkPending" style="display:none" title="Mark Pending">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
         <button class="od-btn-delete" id="odDelete" data-i18n="delete">Delete</button>
       </div>
@@ -1764,9 +1798,16 @@
     if (!total) { tbody.innerHTML = ''; empty.style.display = ''; return; }
     empty.style.display = 'none';
 
-    tbody.innerHTML = orders.map((o, i) => `
-      <tr id="row-${escHtml(o.id)}" data-order-id="${escHtml(o.id)}" style="cursor:pointer">
-        <td class="td-num">#${String(total - i).padStart(3, '0')}</td>
+    const indexMap = new Map(orders.map((o, i) => [o.id, i]));
+    const displayed = [
+      ...orders.filter(o => o.status === 'pending'),
+      ...orders.filter(o => o.status === 'done'),
+    ];
+    tbody.innerHTML = displayed.map(o => {
+      const num = String(total - indexMap.get(o.id)).padStart(3, '0');
+      return `
+      <tr id="row-${escHtml(o.id)}" data-order-id="${escHtml(o.id)}" style="cursor:pointer" class="${o.status === 'done' ? 'row-done' : 'row-pending'}">
+        <td class="td-num">#${num}</td>
         <td class="td-name">${escHtml(o.name)}</td>
         <td class="td-link"><span>${escHtml(o.link)}</span></td>
         <td class="td-status">
@@ -1778,11 +1819,14 @@
         <td class="td-time">${formatTime(o.time)}</td>
         <td class="td-actions">
           <div class="action-btns">
-            ${o.status === 'pending' ? `<button class="btn-done" data-order-action="done" data-order-id="${escHtml(o.id)}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${t('mark_done')}</button>` : ''}
+            ${o.status === 'pending'
+              ? `<button class="btn-done" data-order-action="done" data-order-id="${escHtml(o.id)}" title="${t('mark_done')}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></button>`
+              : `<button class="btn-pending" data-order-action="pending" data-order-id="${escHtml(o.id)}" title="Mark Pending"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>`}
             <button class="btn-delete" data-order-action="delete" data-order-id="${escHtml(o.id)}">${t('delete')}</button>
           </div>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   }
 
   document.getElementById('ordersBody').addEventListener('click', event => {
@@ -1791,6 +1835,7 @@
       event.stopPropagation();
       const id = actionBtn.dataset.orderId;
       if (actionBtn.dataset.orderAction === 'done') markDone(id);
+      if (actionBtn.dataset.orderAction === 'pending') markPending(id);
       if (actionBtn.dataset.orderAction === 'delete') deleteOrder(id);
       return;
     }
@@ -1829,8 +1874,11 @@
     statusEl.className = 'status-badge ' + o.status;
     statusEl.innerHTML = `<span class="status-dot"></span>${o.status === 'pending' ? t('status_pending') : t('status_done')}`;
     const doneBtn = document.getElementById('odMarkDone');
+    const pendingBtn = document.getElementById('odMarkPending');
     doneBtn.style.display = o.status === 'pending' ? '' : 'none';
+    pendingBtn.style.display = o.status === 'done' ? '' : 'none';
     doneBtn.onclick = () => { markDone(id); closeOrderDetail(); };
+    pendingBtn.onclick = () => { markPending(id); closeOrderDetail(); };
     document.getElementById('odDelete').onclick = () => { deleteOrder(id); closeOrderDetail(); };
     const p = o.pricing || {};
     pricingItems = (p.items && p.items.length) ? p.items.map(i => ({ ...i })) : [
@@ -2225,6 +2273,24 @@
   }
 
 
+  function playDoneSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [[523.25, 0], [783.99, 0.14]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        const t = ctx.currentTime + delay;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.28, t + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        osc.start(t); osc.stop(t + 0.28);
+      });
+    } catch (e) {}
+  }
+
   async function markDone(id) {
     const orders = getOrders();
     const o = orders.find(x => String(x.id) === String(id));
@@ -2232,6 +2298,7 @@
     o.status = 'done';
     saveOrders(orders);
     renderAll();
+    playDoneSound();
 
     try {
       const api = await getFirebaseOrdersApi();
@@ -2239,6 +2306,12 @@
     } catch (error) {
       console.error('Status update failed:', error);
     }
+  }
+
+  function markPending(id) {
+    const orders = getOrders();
+    const o = orders.find(x => String(x.id) === String(id));
+    if (o) { o.status = 'pending'; saveOrders(orders); renderAll(); }
   }
 
   async function deleteOrder(id) {
@@ -2346,10 +2419,10 @@
         if (!map[k]) map[k] = { name: o.name, count: 0 };
         map[k].count++;
       });
-      const list = Object.values(map);
+      const list = Object.values(map).sort((a, b) => b.count - a.count);
       count.textContent = tf('n_customers', list.length);
       body.innerHTML = list.length ? list.map(c => `
-        <div class="detail-customer-card">
+        <div class="detail-customer-card" onclick="showCustomerOrders('${escHtml(c.name)}')">
           <div class="detail-cust-avatar">${escHtml(c.name[0].toUpperCase())}</div>
           <div>
             <div class="detail-cust-name">${escHtml(c.name)}</div>
@@ -2372,13 +2445,39 @@
             <span class="status-badge ${o.status}"><span class="status-dot"></span>${o.status === 'pending' ? t('status_pending') : t('status_done')}</span>
             ${(() => { const t = calcOrderTotal(o); return t !== null ? `<span class="detail-card-total">${fmtPrice(t)}<span class="price-sign">$</span></span>` : ''; })()}
             <div class="detail-card-actions">
-              ${o.status === 'pending' ? `<button class="btn-done" data-expand-action="done" data-order-id="${escHtml(o.id)}" data-expand-type="${escHtml(type)}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${t('mark_done')}</button>` : ''}
+              ${o.status === 'pending'
+                ? `<button class="btn-done" data-expand-action="done" data-order-id="${escHtml(o.id)}" data-expand-type="${escHtml(type)}" title="${t('mark_done')}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></button>`
+                : `<button class="btn-pending" data-expand-action="pending" data-order-id="${escHtml(o.id)}" data-expand-type="${escHtml(type)}" title="Mark Pending"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>`}
               <button class="btn-delete" data-expand-action="delete" data-order-id="${escHtml(o.id)}" data-expand-type="${escHtml(type)}">${t('delete')}</button>
             </div>
           </div>
         </div>`).join('')
         : expandEmpty();
     }
+  }
+
+  function showCustomerOrders(name) {
+    const orders = getOrders();
+    const custOrders = orders.filter(o => o.name.toLowerCase() === name.toLowerCase());
+    document.getElementById('expandCount').textContent = tf('n_orders', custOrders.length);
+    document.getElementById('expandBody').innerHTML = `
+      <button class="cust-back-btn" onclick="renderExpandContent('customers')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5"/><path d="m12 5-7 7 7 7"/></svg>
+        ${escHtml(name)}
+      </button>
+      ${custOrders.length ? custOrders.map(o => `
+        <div class="detail-card" style="cursor:pointer" onclick="openOrderDetail(${o.id})">
+          <div class="detail-card-top">
+            <span class="detail-card-name">${escHtml(o.name)}</span>
+            <span class="detail-card-time">${formatTime(o.time)}</span>
+          </div>
+          <span class="detail-card-link">${escHtml(o.link)}</span>
+          <div class="detail-card-footer">
+            <span class="status-badge ${o.status}"><span class="status-dot"></span>${o.status === 'pending' ? t('status_pending') : t('status_done')}</span>
+            ${(() => { const tot = calcOrderTotal(o); return tot !== null ? `<span class="detail-card-total">${fmtPrice(tot)}<span class="price-sign">$</span></span>` : ''; })()}
+          </div>
+        </div>`).join('')
+      : expandEmpty()}`;
   }
 
   function expandEmpty() {
@@ -2406,6 +2505,7 @@
     saveOrders(orders);
     renderExpandContent(type);
     renderAll();
+    playDoneSound();
 
     try {
       const api = await getFirebaseOrdersApi();
@@ -2415,6 +2515,12 @@
     }
   }
 
+  function markPendingExpand(id, type) {
+    const orders = getOrders();
+    const o = orders.find(x => String(x.id) === String(id));
+    if (o) { o.status = 'pending'; saveOrders(orders); renderExpandContent(type); renderAll(); }
+  }
+
   document.addEventListener('click', event => {
     const actionBtn = event.target.closest('[data-expand-action]');
     if (actionBtn) {
@@ -2422,6 +2528,7 @@
       const id = actionBtn.dataset.orderId;
       const type = actionBtn.dataset.expandType || 'total';
       if (actionBtn.dataset.expandAction === 'done') markDoneExpand(id, type);
+      if (actionBtn.dataset.expandAction === 'pending') markPendingExpand(id, type);
       if (actionBtn.dataset.expandAction === 'delete') deleteOrderExpand(id, type);
       return;
     }
@@ -2446,9 +2553,9 @@
   /* ── INVOICE ── */
   const FIXED_ROWS_INV = [
     { platform: 'shein',           label: 'SHEIN' },
-    { platform: 'sheinPlus',       label: 'SHEIN+' },
+    { platform: 'sheinPlus',       label: '+SHEIN' },
     { platform: 'marketplace',     label: 'Marketplace' },
-    { platform: 'marketplacePlus', label: 'Marketplace+' },
+    { platform: 'marketplacePlus', label: '+Marketplace' },
   ];
 
   function buildInvoiceHTML(o) {
@@ -2552,6 +2659,7 @@
       if (img && !img.complete) {
         await new Promise(res => { img.onload = res; img.onerror = res; });
       }
+      await document.fonts.ready;
 
       const canvas = await html2canvas(wrap, {
         scale: 2, useCORS: true, allowTaint: false,
@@ -2581,6 +2689,67 @@
 
     } catch (e) {
       console.error('Invoice capture failed:', e);
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = origInner; }
+    }
+  }
+
+  async function copyInvoiceImage() {
+    if (!detailOrderId) return;
+    const o = getOrders().find(x => x.id === detailOrderId);
+    if (!o) return;
+
+    const btn = document.querySelector('.od-copy-btn');
+    const origInner = btn ? btn.innerHTML : '';
+    const spinSVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:inv-spin .7s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`;
+    if (btn) { btn.disabled = true; btn.innerHTML = spinSVG; }
+
+    try {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:480px;overflow:hidden;background:#fff;';
+      if (currentLang === 'ar') { wrap.dir = 'rtl'; wrap.style.fontFamily = "'Cairo', sans-serif"; }
+      wrap.innerHTML = buildInvoiceHTML(o);
+      document.body.appendChild(wrap);
+
+      const img = wrap.querySelector('img.inv-logo');
+      if (img && !img.complete) {
+        await new Promise(res => { img.onload = res; img.onerror = res; });
+      }
+      await document.fonts.ready;
+
+      const canvas = await html2canvas(wrap, {
+        scale: 2, useCORS: true, allowTaint: false,
+        backgroundColor: '#ffffff', logging: false,
+      });
+      document.body.removeChild(wrap);
+
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+
+      let toast = document.getElementById('waToast');
+      if (!toast) { toast = document.createElement('div'); toast.id = 'waToast'; toast.className = 'wa-toast'; document.body.appendChild(toast); }
+
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        toast.textContent = currentLang === 'ar' ? '📋 تم نسخ الفاتورة — الصق أينما تريد'
+          : currentLang === 'fr' ? '📋 Facture copiée — Collez où vous voulez'
+          : '📋 Invoice copied — Paste anywhere (Ctrl+V)';
+      } catch {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const allOrders = getOrders();
+        const idx = allOrders.findIndex(x => x.id === o.id);
+        a.href = url; a.download = `invoice-${String(allOrders.length - idx).padStart(3,'0')}.png`; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast.textContent = currentLang === 'ar' ? '📥 تم تحميل الفاتورة'
+          : currentLang === 'fr' ? '📥 Facture téléchargée'
+          : '📥 Invoice downloaded';
+      }
+
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 4000);
+
+    } catch (e) {
+      console.error('Copy invoice failed:', e);
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = origInner; }
     }

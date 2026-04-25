@@ -262,16 +262,61 @@
     }
 
     function subscribeToAllOrders(onChange, onError) {
-      const ordersQuery = firestoreModule.query(
-        firestoreModule.collectionGroup(db, ORDER_COLLECTION_NAME),
-        firestoreModule.orderBy("time", "desc"),
-      );
+      const storeOrderUnsubscribers = new Map();
+      const ordersByStore = new Map();
 
-      return firestoreModule.onSnapshot(
-        ordersQuery,
-        (snapshot) => onChange(snapshot.docs.map(mapOrderDoc)),
+      function emitAllOrders() {
+        const allOrders = Array.from(ordersByStore.values())
+          .flat()
+          .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+        onChange(allOrders);
+      }
+
+      const unsubscribeStores = firestoreModule.onSnapshot(
+        firestoreModule.collection(db, STORE_COLLECTION_NAME),
+        (snapshot) => {
+          const liveStoreIds = new Set(snapshot.docs.map((docSnapshot) => docSnapshot.id));
+
+          Array.from(storeOrderUnsubscribers.keys()).forEach((storeId) => {
+            if (!liveStoreIds.has(storeId)) {
+              storeOrderUnsubscribers.get(storeId)?.();
+              storeOrderUnsubscribers.delete(storeId);
+              ordersByStore.delete(storeId);
+            }
+          });
+
+          snapshot.docs.forEach((docSnapshot) => {
+            const currentStoreId = docSnapshot.id;
+            if (storeOrderUnsubscribers.has(currentStoreId)) return;
+
+            const storeOrdersQuery = firestoreModule.query(
+              firestoreModule.collection(db, STORE_COLLECTION_NAME, currentStoreId, ORDER_COLLECTION_NAME),
+              firestoreModule.orderBy("time", "desc"),
+            );
+
+            const unsubscribeStoreOrders = firestoreModule.onSnapshot(
+              storeOrdersQuery,
+              (ordersSnapshot) => {
+                ordersByStore.set(currentStoreId, ordersSnapshot.docs.map(mapOrderDoc));
+                emitAllOrders();
+              },
+              (error) => onError?.(error),
+            );
+
+            storeOrderUnsubscribers.set(currentStoreId, unsubscribeStoreOrders);
+          });
+
+          emitAllOrders();
+        },
         (error) => onError?.(error),
       );
+
+      return () => {
+        unsubscribeStores();
+        storeOrderUnsubscribers.forEach((unsubscribe) => unsubscribe());
+        storeOrderUnsubscribers.clear();
+        ordersByStore.clear();
+      };
     }
 
     async function saveOrder(order) {

@@ -64,6 +64,12 @@
       letter-spacing: .4px; transition: background .2s;
     }
     .login-btn:hover { background: var(--c-purple); }
+    .login-btn:disabled { opacity: .65; cursor: wait; }
+    .login-message {
+      min-height: 18px; font-size: 12px; line-height: 1.45;
+      color: var(--text-muted); text-align: center;
+    }
+    .login-message.error { color: var(--c-red); }
     @keyframes shake {
       0%,100% { transform: translateX(0); }
       20%,60% { transform: translateX(-6px); }
@@ -1065,8 +1071,8 @@
     </div>
     <h1 data-i18n="login_title">Admin Login</h1>
     <p data-i18n="login_sub">Lamar · Fadwa's Dashboard</p>
-    <input type="password" id="loginInput" placeholder="Access code" data-i18n-ph="access_code_ph" autocomplete="off" />
-    <button class="login-btn" data-i18n="enter_dashboard" onclick="tryLogin()">Enter Dashboard</button>
+    <button class="login-btn" id="googleLoginBtn" data-i18n="enter_dashboard" onclick="tryLogin()">Continue with Google</button>
+    <p class="login-message" id="loginMessage"></p>
     <div class="login-lang">
       <div class="lang-switcher">
         <button class="lang-btn" data-lang="en" onclick="setLang('en')">EN</button>
@@ -1140,6 +1146,7 @@
           <button class="lang-btn" data-lang="ar" onclick="setLang('ar')">ع</button>
         </div>
         <button class="clear-btn" data-i18n="clear_all" onclick="clearAllOrders()">Clear All</button>
+        <button class="clear-btn" onclick="signOutAdmin()">Sign Out</button>
       </div>
     </div>
 
@@ -1341,6 +1348,7 @@
   <span data-i18n="new_order">New order received!</span>
 </div>
 
+<script src="assets/js/firebase-orders.js"></script>
 <script>
   /* ── I18N ── */
   const LANGS = {
@@ -1348,7 +1356,7 @@
       login_title:    'Admin Login',
       login_sub:      "Lamar · Fadwa's Dashboard",
       access_code_ph: 'Access code',
-      enter_dashboard:'Enter Dashboard',
+      enter_dashboard:'Continue with Google',
       brand_sub:      'Admin Panel',
       nav_dashboard:  'Dashboard',
       nav_orders:     'Orders',
@@ -1357,6 +1365,7 @@
       role_admin:     'Admin',
       topbar_title:   'Orders Dashboard',
       clear_all:      'Clear All',
+      sign_out:       'Sign Out',
       stat_total:     'Total Orders',
       stat_pending:   'Pending',
       stat_done:      'Completed',
@@ -1543,20 +1552,120 @@
   }
 
   /* ── AUTH ── */
-  const loginInput = document.getElementById('loginInput');
-  loginInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+  const tenantOrdersStorageKey = (window.LamarStore && window.LamarStore.ordersStorageKey) || 'lamar_orders_fadwa';
+  let ordersCache = JSON.parse(localStorage.getItem(tenantOrdersStorageKey) || '[]');
+  let ordersUnsubscribe = null;
+  let saveQueueTimer = null;
+  const pendingOrderSaves = new Map();
 
-  function tryLogin() {
-    if (loginInput.value.trim().toLowerCase() === 'fadwa.hn') {
-      document.getElementById('loginGate').style.display = 'none';
-      document.getElementById('app').classList.add('visible');
-      renderAll();
-    } else {
-      loginInput.classList.add('shake');
-      loginInput.value = '';
-      loginInput.addEventListener('animationend', () => loginInput.classList.remove('shake'), { once: true });
+  function getFirebaseOrdersApi() {
+    if (!window.LamarFirebaseReady) {
+      return Promise.reject(new Error('Firebase is not available.'));
+    }
+
+    return window.LamarFirebaseReady;
+  }
+
+  function setLoginMessage(message, isError = false) {
+    const el = document.getElementById('loginMessage');
+    if (!el) return;
+    el.textContent = message || '';
+    el.classList.toggle('error', isError);
+  }
+
+  function getAuthErrorMessage(error) {
+    if (error && error.code === 'auth/configuration-not-found') {
+      return 'Firebase Auth is not enabled for this project yet. In Firebase Console, open Authentication, click Get started, then enable Google sign-in.';
+    }
+
+    if (error && error.code === 'auth/operation-not-allowed') {
+      return 'Google sign-in is disabled. Enable Google in Firebase Console > Authentication > Sign-in method.';
+    }
+
+    if (error && error.code === 'auth/unauthorized-domain') {
+      return 'This domain is not authorized for Firebase Auth. Add it in Firebase Console > Authentication > Settings > Authorized domains.';
+    }
+
+    return 'Google sign-in failed. Check Firebase Auth setup and try again.';
+  }
+
+  async function tryLogin() {
+    const btn = document.getElementById('googleLoginBtn');
+    if (btn) btn.disabled = true;
+    setLoginMessage('Opening Google sign-in...');
+
+    try {
+      const api = await getFirebaseOrdersApi();
+      await api.signInWithGoogle();
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+      setLoginMessage(getAuthErrorMessage(error), true);
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
+
+  async function signOutAdmin() {
+    try {
+      const api = await getFirebaseOrdersApi();
+      await api.signOutAdmin();
+    } catch (error) {
+      console.error('Sign out failed:', error);
+    }
+  }
+
+  function showLoginGate() {
+    if (ordersUnsubscribe) {
+      ordersUnsubscribe();
+      ordersUnsubscribe = null;
+    }
+    document.getElementById('loginGate').style.display = 'flex';
+    document.getElementById('app').classList.remove('visible');
+  }
+
+  async function openDashboard(user) {
+    document.getElementById('loginGate').style.display = 'none';
+    document.getElementById('app').classList.add('visible');
+    renderAll();
+
+    try {
+      const api = await getFirebaseOrdersApi();
+      await api.ensureAdminStore(user);
+      await api.migrateLegacyOrdersIfNeeded();
+      if (ordersUnsubscribe) ordersUnsubscribe();
+      ordersUnsubscribe = api.subscribeToOrders((orders) => {
+        const previousCount = ordersCache.length;
+        ordersCache = orders;
+        localStorage.setItem(tenantOrdersStorageKey, JSON.stringify(ordersCache));
+
+        if (ordersCache.length > previousCount) {
+          const flash = document.getElementById('newFlash');
+          flash.classList.add('show');
+          setTimeout(() => flash.classList.remove('show'), 3000);
+        }
+
+        renderAll();
+      }, (error) => {
+        console.error('Could not load Firestore orders:', error);
+      alert('Could not load this store orders. Check that this Google account owns this store.');
+      });
+    } catch (error) {
+      console.error('Firebase dashboard setup failed:', error);
+      alert('This store is not ready for this Google account. Create it from owner.html first, or sign in with the store owner account.');
+    }
+  }
+
+  getFirebaseOrdersApi()
+    .then(api => {
+      api.onAdminAuthStateChanged(user => {
+        if (user) openDashboard(user);
+        else showLoginGate();
+      });
+    })
+    .catch(error => {
+      console.error('Firebase auth initialization failed:', error);
+      setLoginMessage('Firebase could not load. Serve this page from a local or hosted web server.', true);
+    });
 
 
   /* ── SIDEBAR DRAWER ── */
@@ -1574,8 +1683,32 @@
   /* ── DATE ── */
 
   /* ── DATA ── */
-  function getOrders() { return JSON.parse(localStorage.getItem('lamar_orders') || '[]'); }
-  function saveOrders(o) { localStorage.setItem('lamar_orders', JSON.stringify(o)); }
+  function getOrders() { return ordersCache; }
+
+  function queueOrderSave(order) {
+    pendingOrderSaves.set(String(order.id), JSON.parse(JSON.stringify(order)));
+    clearTimeout(saveQueueTimer);
+    saveQueueTimer = setTimeout(async () => {
+      const saves = Array.from(pendingOrderSaves.values());
+      pendingOrderSaves.clear();
+
+      try {
+        const api = await getFirebaseOrdersApi();
+        await Promise.all(saves.map(item => api.saveOrder(item)));
+      } catch (error) {
+        console.error('Order save failed:', error);
+      }
+    }, 300);
+  }
+
+  function saveOrders(o) {
+    ordersCache = o;
+    localStorage.setItem(tenantOrdersStorageKey, JSON.stringify(ordersCache));
+    if (detailOrderId) {
+      const active = ordersCache.find(x => String(x.id) === String(detailOrderId));
+      if (active) queueOrderSave(active);
+    }
+  }
 
   function formatTime(iso) {
     const locale = currentLang === 'ar' ? 'ar-MA' : currentLang === 'fr' ? 'fr-FR' : 'en-GB';
@@ -1602,7 +1735,7 @@
     empty.style.display = 'none';
 
     tbody.innerHTML = orders.map((o, i) => `
-      <tr id="row-${o.id}" onclick="openOrderDetail(${o.id})" style="cursor:pointer">
+      <tr id="row-${escHtml(o.id)}" data-order-id="${escHtml(o.id)}" style="cursor:pointer">
         <td class="td-num">#${String(total - i).padStart(3, '0')}</td>
         <td class="td-name">${escHtml(o.name)}</td>
         <td class="td-link"><span>${escHtml(o.link)}</span></td>
@@ -1615,12 +1748,26 @@
         <td class="td-time">${formatTime(o.time)}</td>
         <td class="td-actions">
           <div class="action-btns">
-            ${o.status === 'pending' ? `<button class="btn-done" onclick="event.stopPropagation();markDone(${o.id})"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${t('mark_done')}</button>` : ''}
-            <button class="btn-delete" onclick="event.stopPropagation();deleteOrder(${o.id})">${t('delete')}</button>
+            ${o.status === 'pending' ? `<button class="btn-done" data-order-action="done" data-order-id="${escHtml(o.id)}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${t('mark_done')}</button>` : ''}
+            <button class="btn-delete" data-order-action="delete" data-order-id="${escHtml(o.id)}">${t('delete')}</button>
           </div>
         </td>
       </tr>`).join('');
   }
+
+  document.getElementById('ordersBody').addEventListener('click', event => {
+    const actionBtn = event.target.closest('[data-order-action]');
+    if (actionBtn) {
+      event.stopPropagation();
+      const id = actionBtn.dataset.orderId;
+      if (actionBtn.dataset.orderAction === 'done') markDone(id);
+      if (actionBtn.dataset.orderAction === 'delete') deleteOrder(id);
+      return;
+    }
+
+    const row = event.target.closest('tr[data-order-id]');
+    if (row) openOrderDetail(row.dataset.orderId);
+  });
 
   function escHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1634,11 +1781,11 @@
   let detailOrderId = null;
 
   function openOrderDetail(id) {
-    const o = getOrders().find(x => x.id === id);
+    const o = getOrders().find(x => String(x.id) === String(id));
     if (!o) return;
-    detailOrderId = id;
+    detailOrderId = String(id);
     const total = getOrders().length;
-    const idx = getOrders().findIndex(x => x.id === id);
+    const idx = getOrders().findIndex(x => String(x.id) === String(id));
 
     document.getElementById('odNum').textContent = '#' + String(total - idx).padStart(3, '0');
     document.getElementById('odAvatar').textContent = o.name[0].toUpperCase();
@@ -1920,7 +2067,7 @@
   function autoSavePricing() {
     if (!detailOrderId) return;
     const orders = getOrders();
-    const o = orders.find(x => x.id === detailOrderId);
+    const o = orders.find(x => String(x.id) === String(detailOrderId));
     if (!o) return;
     o.pricing = { items: pricingItems.map(item => ({ ...item })) };
     saveOrders(orders);
@@ -1940,7 +2087,7 @@
     if (!detailOrderId) return;
     const files = Array.from(input.files);
     const orders = getOrders();
-    const o = orders.find(x => x.id === detailOrderId);
+    const o = orders.find(x => String(x.id) === String(detailOrderId));
     if (!o) return;
     if (!o.images) o.images = [];
     let pending = files.length;
@@ -2040,7 +2187,7 @@
   function removeImage(idx) {
     if (!detailOrderId) return;
     const orders = getOrders();
-    const o = orders.find(x => x.id === detailOrderId);
+    const o = orders.find(x => String(x.id) === String(detailOrderId));
     if (!o || !o.images) return;
     o.images.splice(idx, 1);
     saveOrders(orders);
@@ -2048,21 +2195,47 @@
   }
 
 
-  function markDone(id) {
+  async function markDone(id) {
     const orders = getOrders();
-    const o = orders.find(x => x.id === id);
-    if (o) { o.status = 'done'; saveOrders(orders); renderAll(); }
-  }
-
-  function deleteOrder(id) {
-    saveOrders(getOrders().filter(x => x.id !== id));
+    const o = orders.find(x => String(x.id) === String(id));
+    if (!o) return;
+    o.status = 'done';
+    saveOrders(orders);
     renderAll();
+
+    try {
+      const api = await getFirebaseOrdersApi();
+      await api.setOrderStatus(id, 'done');
+    } catch (error) {
+      console.error('Status update failed:', error);
+    }
   }
 
-  function clearAllOrders() {
+  async function deleteOrder(id) {
+    saveOrders(getOrders().filter(x => String(x.id) !== String(id)));
+    renderAll();
+
+    try {
+      const api = await getFirebaseOrdersApi();
+      await api.deleteOrderById(id);
+    } catch (error) {
+      console.error('Order delete failed:', error);
+    }
+  }
+
+  async function clearAllOrders() {
     if (!confirm(t('clear_confirm'))) return;
-    localStorage.removeItem('lamar_orders');
+    const ids = getOrders().map(o => String(o.id));
+    ordersCache = [];
+    localStorage.removeItem(tenantOrdersStorageKey);
     renderAll();
+
+    try {
+      const api = await getFirebaseOrdersApi();
+      await api.clearAllOrders(ids);
+    } catch (error) {
+      console.error('Clear all failed:', error);
+    }
   }
 
   /* ── STAT CARD EXPAND ── */
@@ -2160,7 +2333,7 @@
       const filtered = type === 'total' ? orders : orders.filter(o => o.status === type);
       count.textContent = tf('n_orders', filtered.length);
       body.innerHTML = filtered.length ? filtered.map(o => `
-        <div class="detail-card" style="cursor:pointer" onclick="openOrderDetail(${o.id})">
+        <div class="detail-card" style="cursor:pointer" data-order-id="${escHtml(o.id)}">
           <div class="detail-card-top">
             <span class="detail-card-name">${escHtml(o.name)}</span>
             <span class="detail-card-time">${formatTime(o.time)}</span>
@@ -2170,8 +2343,8 @@
             <span class="status-badge ${o.status}"><span class="status-dot"></span>${o.status === 'pending' ? t('status_pending') : t('status_done')}</span>
             ${(() => { const t = calcOrderTotal(o); return t !== null ? `<span class="detail-card-total">${fmtPrice(t)}<span class="price-sign">$</span></span>` : ''; })()}
             <div class="detail-card-actions">
-              ${o.status === 'pending' ? `<button class="btn-done" onclick="event.stopPropagation();markDoneExpand(${o.id},'${type}')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${t('mark_done')}</button>` : ''}
-              <button class="btn-delete" onclick="event.stopPropagation();deleteOrderExpand(${o.id},'${type}')">${t('delete')}</button>
+              ${o.status === 'pending' ? `<button class="btn-done" data-expand-action="done" data-order-id="${escHtml(o.id)}" data-expand-type="${escHtml(type)}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${t('mark_done')}</button>` : ''}
+              <button class="btn-delete" data-expand-action="delete" data-order-id="${escHtml(o.id)}" data-expand-type="${escHtml(type)}">${t('delete')}</button>
             </div>
           </div>
         </div>`).join('')
@@ -2196,16 +2369,49 @@
     }, { once: true });
   }
 
-  function markDoneExpand(id, type) {
+  async function markDoneExpand(id, type) {
     const orders = getOrders();
-    const o = orders.find(x => x.id === id);
-    if (o) { o.status = 'done'; saveOrders(orders); renderExpandContent(type); renderAll(); }
-  }
-
-  function deleteOrderExpand(id, type) {
-    saveOrders(getOrders().filter(x => x.id !== id));
+    const o = orders.find(x => String(x.id) === String(id));
+    if (!o) return;
+    o.status = 'done';
+    saveOrders(orders);
     renderExpandContent(type);
     renderAll();
+
+    try {
+      const api = await getFirebaseOrdersApi();
+      await api.setOrderStatus(id, 'done');
+    } catch (error) {
+      console.error('Expanded status update failed:', error);
+    }
+  }
+
+  document.addEventListener('click', event => {
+    const actionBtn = event.target.closest('[data-expand-action]');
+    if (actionBtn) {
+      event.stopPropagation();
+      const id = actionBtn.dataset.orderId;
+      const type = actionBtn.dataset.expandType || 'total';
+      if (actionBtn.dataset.expandAction === 'done') markDoneExpand(id, type);
+      if (actionBtn.dataset.expandAction === 'delete') deleteOrderExpand(id, type);
+      return;
+    }
+
+    const card = event.target.closest('.detail-card[data-order-id]');
+    if (card) openOrderDetail(card.dataset.orderId);
+  });
+
+  async function deleteOrderExpand(id, type) {
+    saveOrders(getOrders().filter(x => String(x.id) !== String(id)));
+    renderExpandContent(type);
+    renderAll();
+
+    try {
+      const api = await getFirebaseOrdersApi();
+      await api.deleteOrderById(id);
+    } catch (error) {
+      console.error('Expanded delete failed:', error);
+    }
   }
 
   /* ── INVOICE ── */
@@ -2224,7 +2430,7 @@
     });
     const total = filledItems.reduce((sum, item) => sum + (calcPrice(item.price, item.platform) || 0), 0);
     const allOrders = getOrders();
-    const idx = allOrders.findIndex(x => x.id === o.id);
+    const idx = allOrders.findIndex(x => String(x.id) === String(o.id));
     const orderNum = String(allOrders.length - idx).padStart(3, '0');
     const locale = currentLang === 'ar' ? 'ar-MA' : currentLang === 'fr' ? 'fr-FR' : 'en-GB';
     const date = new Date(o.time).toLocaleDateString(locale, { day: '2-digit', month: 'long', year: 'numeric' });
@@ -2251,7 +2457,7 @@
     const emptyLabel   = currentLang === 'ar' ? 'لم يتم إدخال أي سعر.' : currentLang === 'fr' ? 'Aucun tarif saisi.' : 'No pricing entered.';
     return `
       <div class="inv-header">
-        <img src="fadwa-logo.jpeg" class="inv-logo" crossorigin="anonymous" onerror="this.style.display='none'" alt="Lamar" />
+        <img src="assets/images/brand/fadwa-logo.jpeg" class="inv-logo" crossorigin="anonymous" onerror="this.style.display='none'" alt="Lamar" />
         <div class="inv-brand">SHEIN <span class="inv-brand-script">By_Fadwa_Hn</span></div>
         <div class="inv-tagline">${tagline}</div>
       </div>
@@ -2289,7 +2495,7 @@
 
   function openInvoice() {
     if (!detailOrderId) return;
-    const o = getOrders().find(x => x.id === detailOrderId);
+    const o = getOrders().find(x => String(x.id) === String(detailOrderId));
     if (!o) return;
     document.getElementById('invoiceContent').innerHTML = buildInvoiceHTML(o);
     document.getElementById('invoiceOverlay').classList.add('open');
@@ -2298,7 +2504,7 @@
 
   async function shareInvoiceWhatsApp() {
     if (!detailOrderId) return;
-    const o = getOrders().find(x => x.id === detailOrderId);
+    const o = getOrders().find(x => String(x.id) === String(detailOrderId));
     if (!o || !o.phone) return;
 
     const btn = document.querySelector('.od-wa-btn');
@@ -2330,7 +2536,7 @@
       else if (phone.startsWith('00')) phone = phone.slice(2);
 
       const allOrders = getOrders();
-      const idx = allOrders.findIndex(x => x.id === o.id);
+      const idx = allOrders.findIndex(x => String(x.id) === String(o.id));
       const orderNum = String(allOrders.length - idx).padStart(3, '0');
 
       const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
@@ -2389,7 +2595,7 @@
   /* ── REAL-TIME ── */
   let lastCount = getOrders().length;
   window.addEventListener('storage', e => {
-    if (e.key !== 'lamar_orders') return;
+    if (e.key !== tenantOrdersStorageKey) return;
     const newOrders = JSON.parse(e.newValue || '[]');
     if (newOrders.length > lastCount) {
       const flash = document.getElementById('newFlash');
@@ -2397,6 +2603,7 @@
       setTimeout(() => flash.classList.remove('show'), 3000);
     }
     lastCount = newOrders.length;
+    ordersCache = newOrders;
     renderAll();
   });
 </script>

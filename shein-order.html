@@ -243,7 +243,7 @@
 
       <div class="card-header-area">
         <div class="fadwa-reveal" id="fadwaReveal">
-          <img src="WhatsApp Image 2026-04-21 at 15.24.01.png" alt="SHEIN By Fadwa" />
+          <img src="assets/images/order/shein-by-fadwa.png" alt="SHEIN By Fadwa" />
           <p class="fadwa-greeting">Hii Girls🎀</p>
         </div>
         <div class="card-default-header" id="cardDefaultHeader">
@@ -296,8 +296,11 @@
     </a>
   </div>
 
+  <script src="assets/js/firebase-orders.js"></script>
   <script>
-    const PROFILE_KEY = 'lamar_profile';
+    const PROFILE_KEY = window.LamarStore
+      ? `lamar_profile_${window.LamarStore.slug}`
+      : 'lamar_profile';
     const reveal = document.getElementById('fadwaReveal');
     const defaultHeader = document.getElementById('cardDefaultHeader');
     const adminLink = document.getElementById('adminLink');
@@ -468,7 +471,15 @@
       showStep0();
     }
 
-    function submitOrder() {
+    function getFirebaseOrdersApi() {
+      if (!window.LamarFirebaseReady) {
+        return Promise.reject(new Error('Firebase is not available.'));
+      }
+
+      return window.LamarFirebaseReady;
+    }
+
+    async function submitOrder() {
       const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
       const customerName = document.getElementById('orderName').value.trim();
       const link = document.getElementById('orderLink').value.trim();
@@ -476,27 +487,38 @@
       if (!link) { document.getElementById('orderLink').focus(); return; }
       if (!profile) { showStep0(); return; }
 
-      const orders = JSON.parse(localStorage.getItem('lamar_orders') || '[]');
-      orders.unshift({
-        id: Date.now(),
-        name: profile.name,
-        phone: profile.phone,
-        link,
-        pricing: {},
-        status: 'pending',
-        time: new Date().toISOString()
-      });
-      localStorage.setItem('lamar_orders', JSON.stringify(orders));
-
-      document.getElementById('orderLink').value = '';
-
       const btn = document.getElementById('submitBtn');
-      btn.textContent = t('order_sent');
-      btn.style.background = 'var(--green)';
-      setTimeout(() => {
-        btn.textContent = t('submit');
-        btn.style.background = '';
-      }, 2200);
+      const originalText = btn.textContent;
+      btn.disabled = true;
+
+      try {
+        const api = await getFirebaseOrdersApi();
+        await api.createOrder({
+          name: customerName,
+          phone: profile.phone,
+          link,
+          submittedByName: profile.name,
+        });
+
+        document.getElementById('orderLink').value = '';
+        document.getElementById('orderName').value = '';
+        localStorage.removeItem(PROFILE_KEY);
+        btn.textContent = t('order_sent');
+        btn.style.background = 'var(--green)';
+        setTimeout(() => {
+          btn.textContent = t('submit');
+          btn.style.background = '';
+          document.getElementById('profileName').value = '';
+          document.getElementById('profilePhone').value = '';
+          showStep0();
+        }, 2200);
+      } catch (error) {
+        console.error('Order submission failed:', error);
+        alert('Could not send the order. Please check that this store exists, then try again.');
+        btn.textContent = originalText;
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     // Init
@@ -508,6 +530,10 @@
       } else {
         showStep0();
       }
+
+      getFirebaseOrdersApi()
+        .then(api => api.migrateLegacyOrdersIfNeeded())
+        .catch(error => console.warn('Legacy Firestore migration skipped:', error));
     })();
   </script>
 </body>

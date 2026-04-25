@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Store - Lamar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #1a1a2e;
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --border: #e8eaf0;
+      --text: #1e1e1e;
+      --muted: #777;
+      --purple: #8b5cf6;
+      --green: #22c55e;
+      --red: #ef4444;
+      --radius: 14px;
+      --shadow: 0 8px 40px rgba(0,0,0,.13);
+    }
+    body {
+      min-height: 100vh;
+      font-family: Inter, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .owner-shell {
+      width: 100%;
+      max-width: 560px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 34px;
+    }
+    .owner-kicker {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--purple);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-family: "Playfair Display", serif;
+      font-size: 30px;
+      color: var(--navy);
+      margin-bottom: 8px;
+    }
+    .owner-copy {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+      margin-bottom: 24px;
+    }
+    .owner-user {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #f8f9fc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 22px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .owner-user strong { display: block; color: var(--text); font-size: 14px; }
+    .owner-form {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .owner-field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .owner-field label {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .owner-field input {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font: inherit;
+      outline: none;
+      background: #f8f9fc;
+    }
+    .owner-field input:focus { border-color: var(--purple); background: #fff; }
+    .slug-preview {
+      font-size: 13px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+    .slug-preview strong { color: var(--navy); }
+    .owner-button {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      padding: 13px 16px;
+      background: var(--navy);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .2s, opacity .2s;
+    }
+    .owner-button:hover { background: var(--purple); }
+    .owner-button:disabled { opacity: .65; cursor: wait; }
+    .owner-button.secondary {
+      width: auto;
+      background: #f8f9fc;
+      color: var(--navy);
+      border: 1px solid var(--border);
+      padding: 9px 12px;
+      font-size: 12px;
+    }
+    .owner-button.secondary:hover { background: #eef0f7; }
+    .owner-message {
+      min-height: 20px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .owner-message.error { color: var(--red); }
+    .owner-result {
+      display: none;
+      margin-top: 22px;
+      border-top: 1px solid var(--border);
+      padding-top: 22px;
+    }
+    .owner-result h2 {
+      font-size: 16px;
+      color: var(--navy);
+      margin-bottom: 14px;
+    }
+    .link-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      background: #f8f9fc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .link-row span {
+      font-size: 12px;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 3px;
+    }
+    .link-row a {
+      color: var(--navy);
+      font-weight: 700;
+      font-size: 13px;
+      word-break: break-all;
+      text-decoration: none;
+    }
+    .owner-nav {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin-top: 22px;
+      font-size: 13px;
+    }
+    .owner-nav a { color: var(--muted); text-decoration: none; font-weight: 600; }
+    .owner-nav a:hover { color: var(--navy); }
+    @media (max-width: 560px) {
+      body { padding: 16px; }
+      .owner-shell { padding: 26px 20px; }
+      h1 { font-size: 25px; }
+      .link-row { grid-template-columns: 1fr; }
+      .owner-button.secondary { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="owner-shell">
+    <p class="owner-kicker">Owner setup</p>
+    <h1>Create your store</h1>
+    <p class="owner-copy">
+      Sign in with Google, choose a store link, then share the generated order page with customers.
+    </p>
+
+    <section class="owner-user" id="ownerUser">
+      <div>
+        <strong id="ownerName"></strong>
+        <span id="ownerEmail"></span>
+      </div>
+      <button class="owner-button secondary" id="signOutBtn" type="button">Sign out</button>
+    </section>
+
+    <button class="owner-button" id="signInBtn" type="button">Continue with Google</button>
+
+    <form class="owner-form" id="storeForm">
+      <div class="owner-field">
+        <label for="storeName">Store name</label>
+        <input id="storeName" autocomplete="organization" placeholder="Fadwa SHEIN" required />
+      </div>
+      <div class="owner-field">
+        <label for="storeSlug">Store link</label>
+        <input id="storeSlug" autocomplete="off" inputmode="url" placeholder="fadwa" required />
+        <p class="slug-preview">Preview: <strong id="slugPreview">fadwa.local</strong></p>
+      </div>
+      <button class="owner-button" id="createBtn" type="submit">Create store</button>
+    </form>
+
+    <p class="owner-message" id="ownerMessage"></p>
+
+    <section class="owner-result" id="ownerResult">
+      <h2>Your store is ready</h2>
+      <div class="link-row">
+        <div>
+          <span>Order link</span>
+          <a id="orderLink" target="_blank" rel="noopener"></a>
+        </div>
+        <button class="owner-button secondary" data-copy-target="orderLink" type="button">Copy</button>
+      </div>
+      <div class="link-row">
+        <div>
+          <span>Admin link</span>
+          <a id="adminLink" target="_blank" rel="noopener"></a>
+        </div>
+        <button class="owner-button secondary" data-copy-target="adminLink" type="button">Copy</button>
+      </div>
+    </section>
+
+    <nav class="owner-nav">
+      <a href="index.html">Storefront</a>
+      <a href="shein-order.html">Current order page</a>
+    </nav>
+  </main>
+
+  <script src="assets/js/firebase-orders.js"></script>
+  <script>
+    const signInBtn = document.getElementById('signInBtn');
+    const signOutBtn = document.getElementById('signOutBtn');
+    const ownerUser = document.getElementById('ownerUser');
+    const ownerName = document.getElementById('ownerName');
+    const ownerEmail = document.getElementById('ownerEmail');
+    const storeForm = document.getElementById('storeForm');
+    const storeName = document.getElementById('storeName');
+    const storeSlug = document.getElementById('storeSlug');
+    const slugPreview = document.getElementById('slugPreview');
+    const createBtn = document.getElementById('createBtn');
+    const message = document.getElementById('ownerMessage');
+    const result = document.getElementById('ownerResult');
+    const orderLink = document.getElementById('orderLink');
+    const adminLink = document.getElementById('adminLink');
+
+    let firebaseApi = null;
+
+    function setMessage(text, isError = false) {
+      message.textContent = text || '';
+      message.classList.toggle('error', isError);
+    }
+
+    function updatePreview() {
+      const slug = window.LamarStore.sanitizeSlug(storeSlug.value || storeName.value || 'fadwa');
+      const links = window.LamarStore.buildLinks(slug);
+      slugPreview.textContent = new URL(links.order).host;
+      return { slug, links };
+    }
+
+    function showLinks(links) {
+      orderLink.href = links.order;
+      orderLink.textContent = links.order;
+      adminLink.href = links.admin;
+      adminLink.textContent = links.admin;
+      result.style.display = 'block';
+    }
+
+    signInBtn.addEventListener('click', async () => {
+      signInBtn.disabled = true;
+      setMessage('Opening Google sign-in...');
+
+      try {
+        await firebaseApi.signInWithGoogle();
+      } catch (error) {
+        console.error('Owner sign-in failed:', error);
+        setMessage('Google sign-in failed. Check Firebase Auth authorized domains and try again.', true);
+      } finally {
+        signInBtn.disabled = false;
+      }
+    });
+
+    signOutBtn.addEventListener('click', () => {
+      firebaseApi.signOutAdmin();
+    });
+
+    storeName.addEventListener('input', () => {
+      if (!storeSlug.value.trim()) updatePreview();
+    });
+
+    storeSlug.addEventListener('input', updatePreview);
+
+    storeForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const { slug, links } = updatePreview();
+      const displayName = storeName.value.trim();
+
+      if (!displayName) {
+        storeName.focus();
+        return;
+      }
+
+      createBtn.disabled = true;
+      setMessage('Creating your store...');
+
+      try {
+        await firebaseApi.createStore({ slug, displayName });
+        showLinks(links);
+        setMessage('Store created. Use the links below.');
+      } catch (error) {
+        console.error('Store creation failed:', error);
+        setMessage(error.message || 'Could not create this store link.', true);
+      } finally {
+        createBtn.disabled = false;
+      }
+    });
+
+    document.querySelectorAll('[data-copy-target]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const target = document.getElementById(button.dataset.copyTarget);
+        await navigator.clipboard.writeText(target.href);
+        button.textContent = 'Copied';
+        setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+      });
+    });
+
+    window.LamarFirebaseReady
+      .then(api => {
+        firebaseApi = api;
+        updatePreview();
+        api.onAdminAuthStateChanged(user => {
+          const signedIn = Boolean(user);
+          signInBtn.style.display = signedIn ? 'none' : '';
+          storeForm.style.display = signedIn ? 'flex' : 'none';
+          ownerUser.style.display = signedIn ? 'flex' : 'none';
+          result.style.display = 'none';
+          setMessage('');
+
+          if (signedIn) {
+            ownerName.textContent = user.displayName || 'Store owner';
+            ownerEmail.textContent = user.email || '';
+            if (!storeName.value.trim()) storeName.value = user.displayName || '';
+            updatePreview();
+          }
+        });
+      })
+      .catch(error => {
+        console.error('Firebase setup failed:', error);
+        setMessage('Firebase could not load. Open this page from localhost or an authorized domain.', true);
+      });
+  </script>
+</body>
+</html>

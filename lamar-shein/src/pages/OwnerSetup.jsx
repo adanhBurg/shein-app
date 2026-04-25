@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext.jsx';
 import logoImg from '../assets/logo.jpeg';
@@ -73,14 +73,21 @@ export default function OwnerSetup() {
   const [error, setError] = useState('');
   const [links, setLinks] = useState(null);
   const [copied, setCopied] = useState('');
+  const didPrefillStoreName = useRef(false);
 
   useEffect(() => listenAuth((nextUser) => {
     setUser(nextUser);
     setState(nextUser ? 'form' : 'gate');
-    if (nextUser && !storeName) {
+    if (!nextUser) {
+      didPrefillStoreName.current = false;
+      return;
+    }
+
+    if (!didPrefillStoreName.current) {
+      didPrefillStoreName.current = true;
       setStoreName(nextUser.displayName ? `${nextUser.displayName} SHEIN` : '');
     }
-  }), [storeName]);
+  }), []);
 
   const effectiveSlug = slugManual ? storeSlug : (storeName ? sanitizeStoreSlug(storeName) : '');
   const previewSlug = effectiveSlug || 'store-name';

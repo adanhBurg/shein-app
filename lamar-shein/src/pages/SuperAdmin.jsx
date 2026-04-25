@@ -26,6 +26,7 @@ export default function SuperAdmin() {
   const [stores, setStores] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
   const [storeSearch, setStoreSearch] = useState('');
+  const [orderSearch, setOrderSearch] = useState('');
   const [selectedStore, setSelectedStore] = useState(null);
   const [activeTab, setActiveTab] = useState('orders');
 
@@ -53,9 +54,22 @@ export default function SuperAdmin() {
     return !q || [store.id, store.slug, store.displayName, store.ownerEmail || ''].join(' ').toLowerCase().includes(q);
   });
 
-  const filteredOrders = selectedStore
+  const filteredOrders = (selectedStore
     ? allOrders.filter((order) => order.storeId === selectedStore)
-    : allOrders;
+    : allOrders
+  ).filter((order) => {
+    const q = orderSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [
+      order.orderNumber,
+      order.storeId,
+      order.name,
+      order.phone,
+      order.submittedByName,
+      order.link,
+      order.status,
+    ].join(' ').toLowerCase().includes(q);
+  });
 
   const totalPending = allOrders.filter((order) => order.status === 'pending').length;
   const totalDone = allOrders.filter((order) => order.status === 'done').length;
@@ -173,6 +187,7 @@ export default function SuperAdmin() {
 
         {activeTab === 'orders' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder="بحث برقم الطلب، المتجر، الاسم أو الهاتف..." style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: `1.5px solid ${T.border}`, background: T.card, color: T.text, fontSize: 13, fontFamily: 'Tajawal, sans-serif', outline: 'none', boxSizing: 'border-box', direction: 'rtl', textAlign: 'right' }} />
             {selectedStore && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.accentLight, borderRadius: 10 }}>
                 <button onClick={() => setSelectedStore(null)} style={{ background: 'none', border: 'none', color: T.accent, cursor: 'pointer', fontSize: 16 }}>×</button>
@@ -189,6 +204,7 @@ export default function SuperAdmin() {
                       <span style={{ fontSize: 10, color: T.textMuted }}>{formatTime(order.time)}</span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
+                      {order.orderNumber && <div style={{ display: 'inline-flex', color: T.accent, background: T.accentLight, fontSize: 10, fontWeight: 900, borderRadius: 8, padding: '3px 7px', direction: 'ltr', marginBottom: 4 }}>{order.orderNumber}</div>}
                       <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{order.name}</div>
                       <div style={{ fontSize: 10, color: T.textMuted, direction: 'ltr' }}>{order.phone}</div>
                       <div style={{ fontSize: 10, color: T.textMuted }}>{order.submittedByName}</div>

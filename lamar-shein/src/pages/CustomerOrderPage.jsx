@@ -1,10 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext.jsx';
 import { useLang } from '../i18n.js';
 import LanguageSwitcher from '../components/LanguageSwitcher.jsx';
 import logoImg from '../assets/logo.jpeg';
 import { createOrder, getStore, isValidStoreSlug, resolveRouteStoreSlug } from '../services/firebase.js';
+
+function loadScript(src, globalName) {
+  if (globalName && window[globalName]) return Promise.resolve(window[globalName]);
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener('load', () => resolve(globalName ? window[globalName] : true), { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve(globalName ? window[globalName] : true);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
 
 export default function CustomerOrderPage() {
   const { store: routeStore } = useParams();
@@ -34,8 +52,11 @@ export default function CustomerOrderPage() {
   const [order, setOrder] = useState({ name: '', link: '' });
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [createdOrderNumber, setCreatedOrderNumber] = useState('');
+  const [createdOrder, setCreatedOrder] = useState(null);
   const [errors, setErrors] = useState({});
   const [shake, setShake] = useState('');
+  const confirmationRef = useRef(null);
 
   const storeValid = store && isValidStoreSlug(store);
   const showReveal = order.name.trim().toLowerCase() === 'fadwa.hn';
@@ -105,7 +126,7 @@ export default function CustomerOrderPage() {
     setSending(true);
 
     try {
-      await createOrder(store, {
+      const created = await createOrder(store, {
         name: order.name.trim(),
         phone: profile.phone,
         link: order.link,
@@ -113,18 +134,50 @@ export default function CustomerOrderPage() {
       });
 
       setSending(false);
+      setCreatedOrderNumber(created.orderNumber || '');
+      setCreatedOrder(created);
       setSent(true);
-      setTimeout(() => {
-        setSent(false);
-        setOrder({ name: '', link: '' });
-        localStorage.removeItem(profileKey);
-        setProfile({ name: '', phone: '' });
-        setStep(0);
-      }, 2200);
     } catch (error) {
       setSending(false);
       alert(`تعذر إرسال الطلب لمتجر "${store}". ${error?.code || ''} ${error?.message || error}`);
     }
+  };
+
+  const buildConfirmationText = () => [
+    `رقم الطلب: ${createdOrder?.orderNumber || createdOrderNumber}`,
+    `المتجر: ${store}`,
+    `اسم الزبونة: ${createdOrder?.name || order.name}`,
+    `الهاتف: ${createdOrder?.phone || profile.phone}`,
+    `رابط المنتج: ${createdOrder?.link || order.link}`,
+    `أرسلت بواسطة: ${createdOrder?.submittedByName || profile.name}`,
+  ].filter(Boolean).join('\n');
+
+  const shareConfirmationOnWhatsApp = () => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(buildConfirmationText())}`, '_blank');
+  };
+
+  const downloadConfirmationImage = async () => {
+    if (!confirmationRef.current) return;
+    try {
+      const html2canvas = await loadScript('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js', 'html2canvas');
+      const canvas = await html2canvas(confirmationRef.current, { scale: 2, backgroundColor: '#ffffff' });
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `order-${createdOrder?.orderNumber || createdOrderNumber || 'confirmation'}.png`;
+      a.click();
+    } catch (error) {
+      alert(error?.message || String(error));
+    }
+  };
+
+  const startNewOrder = () => {
+    setSent(false);
+    setCreatedOrderNumber('');
+    setCreatedOrder(null);
+    setOrder({ name: '', link: '' });
+    localStorage.removeItem(profileKey);
+    setProfile({ name: '', phone: '' });
+    setStep(0);
   };
 
   const inputStyle = (hasError) => ({
@@ -187,12 +240,68 @@ export default function CustomerOrderPage() {
   const Steps = ({ active }) => (
     <div style={{ textAlign: 'center', paddingBottom: 16, flexShrink: 0 }}>
       <span style={{ display: 'inline-flex', gap: 6 }}>
-        {[0, 1].map((i) => (
+        {[0, 1, 2].map((i) => (
           <span key={i} style={{ width: 20, height: 4, borderRadius: 2, background: i === active ? T.accent : T.border, display: 'inline-block', transition: 'background 0.3s' }} />
         ))}
       </span>
     </div>
   );
+
+  if (sent && createdOrder) {
+    const confirmationRows = [
+      ['رقم الطلب', createdOrder.orderNumber || createdOrderNumber],
+      ['اسم الزبونة', createdOrder.name],
+      ['الهاتف', createdOrder.phone],
+      ['أرسلت بواسطة', createdOrder.submittedByName],
+      ['رابط المنتج', createdOrder.link],
+    ];
+
+    return (
+      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', direction: t.dir }}>
+        <Header>
+          <img src={logoImg} alt="logo" style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '3px solid rgba(255,255,255,0.3)', marginBottom: 10 }} />
+          <div style={{ color: '#fff', fontSize: 20, fontWeight: 800, marginBottom: 4 }}>تم استلام طلبك</div>
+          <div style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12 }}>احتفظي برقم الطلب للاستفسار بسرعة.</div>
+        </Header>
+
+        <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div ref={confirmationRef} style={{ background: T.card, borderRadius: 16, padding: '18px 16px', boxShadow: `0 3px 18px ${T.shadow}`, border: `1px solid ${T.border}` }}>
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+              <div style={{ color: T.textMuted, fontSize: 11, marginBottom: 6 }}>رقم الطلب</div>
+              <div style={{ color: T.accent, fontSize: 25, fontWeight: 900, letterSpacing: 0, direction: 'ltr' }}>
+                {createdOrder.orderNumber || createdOrderNumber}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {confirmationRows.slice(1).map(([label, value]) => (
+                <div key={label} style={{ background: T.bg, borderRadius: 11, padding: '10px 12px' }}>
+                  <div style={{ color: T.textMuted, fontSize: 10, marginBottom: 4, textAlign: isRTL ? 'right' : 'left' }}>{label}</div>
+                  <div style={{ color: T.text, fontSize: label === 'رابط المنتج' ? 11 : 13, fontWeight: 700, direction: label === 'رابط المنتج' || label === 'الهاتف' ? 'ltr' : t.dir, textAlign: label === 'رابط المنتج' || label === 'الهاتف' ? 'left' : (isRTL ? 'right' : 'left'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: label === 'رابط المنتج' ? 'nowrap' : 'normal' }}>
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <button onClick={shareConfirmationOnWhatsApp} style={{ padding: '13px 10px', borderRadius: 13, border: 'none', background: '#25d366', color: '#fff', fontSize: 13, fontWeight: 800, fontFamily: 'Tajawal, sans-serif', cursor: 'pointer' }}>
+              واتساب
+            </button>
+            <button onClick={downloadConfirmationImage} style={{ padding: '13px 10px', borderRadius: 13, border: `1.5px solid ${T.border}`, background: T.card, color: T.text, fontSize: 13, fontWeight: 800, fontFamily: 'Tajawal, sans-serif', cursor: 'pointer' }}>
+              حفظ صورة
+            </button>
+          </div>
+
+          <button onClick={startNewOrder} style={{ padding: '13px', borderRadius: 13, border: 'none', background: `linear-gradient(135deg, ${T.accent}, ${T.accentDark})`, color: '#fff', fontSize: 14, fontWeight: 800, fontFamily: 'Tajawal, sans-serif', cursor: 'pointer' }}>
+            طلب جديد
+          </button>
+        </div>
+        <Steps active={2} />
+      </div>
+    );
+  }
 
   if (step === 0) {
     return (

@@ -7,7 +7,6 @@ import {
   signOut,
 } from 'firebase/auth';
 import {
-  addDoc,
   collection,
   collectionGroup,
   deleteDoc,
@@ -17,6 +16,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -105,8 +105,17 @@ function normalizeStatus(status) {
   return status === 'done' ? 'done' : 'pending';
 }
 
+export function buildOrderPrefix(storeSlug) {
+  const cleaned = sanitizeStoreSlug(storeSlug).replace(/[^a-z0-9]/g, '').toUpperCase();
+  return (cleaned || 'LAM').slice(0, 3).padEnd(3, 'X');
+}
+
+function formatOrderNumber(storeSlug, sequence) {
+  return `${buildOrderPrefix(storeSlug)}-${String(sequence).padStart(5, '0')}`;
+}
+
 function serializeOrder(order) {
-  return {
+  const serialized = {
     name: String(order.name || '').trim().slice(0, 120),
     phone: String(order.phone || '').trim().slice(0, 40),
     link: String(order.link || '').trim(),
@@ -116,6 +125,12 @@ function serializeOrder(order) {
     pricing: { items: normalizePricingItems(order.pricing?.items) },
     images: Array.isArray(order.images) ? order.images.filter((image) => typeof image === 'string') : [],
   };
+
+  if (order.orderNumber) serialized.orderNumber = String(order.orderNumber).trim().toUpperCase();
+  if (Number.isFinite(Number(order.orderSequence))) serialized.orderSequence = Number(order.orderSequence);
+  if (order.orderPrefix) serialized.orderPrefix = String(order.orderPrefix).trim().toUpperCase();
+
+  return serialized;
 }
 
 function mapOrderDoc(snapshot) {
@@ -125,6 +140,9 @@ function mapOrderDoc(snapshot) {
     id: snapshot.id,
     storeId,
     store: storeId,
+    orderNumber: typeof data.orderNumber === 'string' ? data.orderNumber : '',
+    orderSequence: typeof data.orderSequence === 'number' ? data.orderSequence : null,
+    orderPrefix: typeof data.orderPrefix === 'string' ? data.orderPrefix : buildOrderPrefix(storeId),
     name: typeof data.name === 'string' ? data.name : '',
     phone: typeof data.phone === 'string' ? data.phone : '',
     link: typeof data.link === 'string' ? data.link : '',
@@ -196,6 +214,7 @@ export async function ensureOwnerStore(storeSlug, user = auth.currentUser) {
 }
 
 export async function createOrder(storeSlug, input) {
+  const slug = sanitizeStoreSlug(storeSlug);
   const normalizedLink = String(input.link || '').match(/^https?:\/\//i)
     ? String(input.link || '').trim()
     : `https://${String(input.link || '').trim()}`;
@@ -210,8 +229,22 @@ export async function createOrder(storeSlug, input) {
     images: [],
   });
 
-  const ref = await addDoc(collection(db, 'stores', sanitizeStoreSlug(storeSlug), 'orders'), order);
-  return { id: ref.id, storeId: sanitizeStoreSlug(storeSlug), ...order };
+  const counterRef = doc(db, 'metadata', 'orderCounter');
+  const orderRef = doc(collection(db, 'stores', slug, 'orders'));
+
+  return runTransaction(db, async (transaction) => {
+    const counterSnap = await transaction.get(counterRef);
+    const lastSequence = Number(counterSnap.data()?.lastSequence || 0);
+    const orderSequence = lastSequence + 1;
+    const orderPrefix = buildOrderPrefix(slug);
+    const orderNumber = formatOrderNumber(slug, orderSequence);
+    const numberedOrder = { ...order, orderNumber, orderSequence, orderPrefix };
+
+    transaction.set(counterRef, { lastSequence: orderSequence, updatedAt: serverTimestamp() }, { merge: true });
+    transaction.set(orderRef, serializeOrder(numberedOrder));
+
+    return { id: orderRef.id, storeId: slug, ...numberedOrder };
+  });
 }
 
 export function subscribeToOrders(storeSlug, onChange, onError) {
@@ -236,10 +269,16 @@ export function subscribeToStores(onChange, onError) {
 }
 
 export function subscribeToAllOrders(onChange, onError) {
-  const ordersQuery = query(collectionGroup(db, 'orders'), orderBy('time', 'desc'));
   return onSnapshot(
-    ordersQuery,
-    (snapshot) => onChange(snapshot.docs.map(mapOrderDoc)),
+    collectionGroup(db, 'orders'),
+    (snapshot) => {
+      const orders = snapshot.docs.map(mapOrderDoc).sort((a, b) => {
+        const aTime = new Date(a.time).getTime() || 0;
+        const bTime = new Date(b.time).getTime() || 0;
+        return bTime - aTime;
+      });
+      onChange(orders);
+    },
     (error) => onError?.(error),
   );
 }

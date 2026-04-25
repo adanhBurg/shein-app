@@ -1,0 +1,157 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function storePath(storeId) {
+      return /databases/$(database)/documents/stores/$(storeId);
+    }
+
+    function counterPath() {
+      return /databases/$(database)/documents/metadata/orderCounter;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == "hnadamohamed18@gmail.com";
+    }
+
+    function isStoreOwner(storeId) {
+      return isSignedIn()
+        && exists(storePath(storeId))
+        && get(storePath(storeId)).data.ownerUid == request.auth.uid;
+    }
+
+    function isValidOrderPrefix(prefix) {
+      return prefix is string && prefix.matches("^[A-Z0-9]{3}$");
+    }
+
+    function isNextOrderSequence(sequence) {
+      return sequence is number
+        && sequence > 0
+        && int(sequence) == sequence
+        && (
+          (
+            exists(counterPath())
+            && sequence == get(counterPath()).data.lastSequence + 1
+            && getAfter(counterPath()).data.lastSequence == sequence
+          )
+          || (
+            !exists(counterPath())
+            && sequence == 1
+            && getAfter(counterPath()).data.lastSequence == 1
+          )
+        );
+    }
+
+    function isValidCounterCreate() {
+      return request.resource.data.keys().hasOnly(["lastSequence", "updatedAt"])
+        && request.resource.data.lastSequence is number
+        && int(request.resource.data.lastSequence) == request.resource.data.lastSequence
+        && request.resource.data.lastSequence == 1;
+    }
+
+    function isValidCounterUpdate() {
+      return request.resource.data.keys().hasOnly(["lastSequence", "updatedAt"])
+        && request.resource.data.lastSequence is number
+        && int(request.resource.data.lastSequence) == request.resource.data.lastSequence
+        && request.resource.data.lastSequence == resource.data.lastSequence + 1;
+    }
+
+    function isValidStoreCreate(storeId) {
+      return isSignedIn()
+        && request.resource.data.keys().hasOnly([
+          "slug",
+          "subdomain",
+          "ownerUid",
+          "ownerEmail",
+          "displayName",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.slug == storeId
+        && request.resource.data.subdomain == storeId
+        && request.resource.data.ownerUid == request.auth.uid
+        && (request.resource.data.ownerEmail is string || request.resource.data.ownerEmail == null)
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 120;
+    }
+
+    function isValidStoreUpdate(storeId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "displayName",
+          "ownerEmail",
+          "updatedAt"
+        ])
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.slug == storeId
+        && request.resource.data.subdomain == storeId;
+    }
+
+    function isValidOrderCreate(storeId) {
+      return exists(storePath(storeId))
+        && storeId.matches("^[a-z0-9-]{1,80}$")
+        && request.resource.data.keys().hasOnly([
+          "name",
+          "phone",
+          "link",
+          "status",
+          "time",
+          "submittedByName",
+          "pricing",
+          "images",
+          "orderNumber",
+          "orderSequence",
+          "orderPrefix"
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() > 0
+        && request.resource.data.phone.size() <= 40
+        && request.resource.data.link is string
+        && request.resource.data.link.matches("^https?://.*")
+        && request.resource.data.status == "pending"
+        && request.resource.data.time is string
+        && request.resource.data.submittedByName is string
+        && request.resource.data.pricing is map
+        && request.resource.data.pricing.keys().hasOnly(["items"])
+        && request.resource.data.pricing.items is list
+        && request.resource.data.images is list
+        && request.resource.data.images.size() == 0
+        && isValidOrderPrefix(request.resource.data.orderPrefix)
+        && isNextOrderSequence(request.resource.data.orderSequence)
+        && request.resource.data.orderNumber.matches("^[A-Z0-9]{3}-[0-9]{5,}$");
+    }
+
+    match /metadata/orderCounter {
+      allow create: if isValidCounterCreate();
+      allow update: if isValidCounterUpdate();
+      allow get: if true;
+      allow list, delete: if isSuperAdmin();
+    }
+
+    match /stores/{storeId} {
+      allow create: if isValidStoreCreate(storeId);
+      allow get: if true;
+      allow list: if isSuperAdmin();
+      allow update: if isStoreOwner(storeId) && isValidStoreUpdate(storeId);
+      allow delete: if false;
+
+      match /orders/{orderId} {
+        allow create: if isStoreOwner(storeId) || isValidOrderCreate(storeId);
+        allow read: if isStoreOwner(storeId) || isSuperAdmin();
+        allow update, delete: if isStoreOwner(storeId);
+      }
+    }
+
+    match /{path=**}/orders/{orderId} {
+      allow read: if isSuperAdmin();
+    }
+  }
+}

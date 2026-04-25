@@ -69,7 +69,10 @@ service cloud.firestore {
         && request.resource.data.link.matches("^https?://.*")
         && request.resource.data.status == "pending"
         && request.resource.data.time is string
+        && request.resource.data.submittedByName is string
         && request.resource.data.pricing is map
+        && request.resource.data.pricing.keys().hasOnly(["items"])
+        && request.resource.data.pricing.items is list
         && request.resource.data.images is list
         && request.resource.data.images.size() == 0;
     }

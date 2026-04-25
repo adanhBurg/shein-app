@@ -49,6 +49,17 @@
     return sanitizeStoreSlug(localStorage.getItem("lamar_store_slug") || "fadwa");
   }
 
+  function getUrlStoreSlug() {
+    const pathStore = getPathStoreSlug();
+    if (pathStore) return pathStore;
+
+    const params = new URLSearchParams(window.location.search);
+    const queryStore = params.get("store");
+    if (queryStore) return sanitizeStoreSlug(queryStore);
+
+    return null;
+  }
+
   function buildStoreLinks(value) {
     const slug = sanitizeStoreSlug(value);
     const origin = window.location.origin;
@@ -65,12 +76,15 @@
   }
 
   const storeSlug = resolveStoreSlug();
+  const urlStoreSlug = getUrlStoreSlug();
   const tenantOrdersStorageKey = `lamar_orders_${storeSlug}`;
   const legacyMigrationKey = `${LEGACY_MIGRATION_KEY_PREFIX}_${storeSlug}`;
 
   localStorage.setItem("lamar_store_slug", storeSlug);
   window.LamarStore = {
     slug: storeSlug,
+    urlSlug: urlStoreSlug,
+    hasUrlStore: Boolean(urlStoreSlug),
     ordersStorageKey: tenantOrdersStorageKey,
     buildLinks: buildStoreLinks,
     tenantPath: buildTenantPath,

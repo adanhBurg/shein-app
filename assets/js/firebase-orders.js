@@ -12,6 +12,7 @@
   const ORDER_COLLECTION_NAME = "orders";
   const LEGACY_MIGRATION_KEY_PREFIX = "lamar_firestore_orders_migrated";
   const FIREBASE_VERSION = "12.7.0";
+  const SUPER_ADMIN_EMAIL = "hnadamohamed18@gmail.com";
 
   function sanitizeStoreSlug(value) {
     const slug = String(value || "")
@@ -22,6 +23,11 @@
       .replace(/^-|-$/g, "");
 
     return slug || "fadwa";
+  }
+
+  function getIsLocalHost() {
+    const host = window.location.hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
   }
 
   function getTenantRoute() {
@@ -54,9 +60,7 @@
   }
 
   function getLocalQueryStoreSlug() {
-    const host = window.location.hostname.toLowerCase();
-    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
-    if (!isLocalHost) return null;
+    if (!getIsLocalHost()) return null;
 
     const params = new URLSearchParams(window.location.search);
     const queryStore = params.get("store");
@@ -83,6 +87,14 @@
   function buildStoreLinks(value) {
     const slug = sanitizeStoreSlug(value);
     const origin = window.location.origin;
+    const localStoreParam = encodeURIComponent(slug);
+
+    if (getIsLocalHost()) {
+      return {
+        order: `${origin}/shein-order.html?store=${localStoreParam}`,
+        admin: `${origin}/admin.html?store=${localStoreParam}`,
+      };
+    }
 
     return {
       order: `${origin}/${slug}/orders`,
@@ -98,7 +110,13 @@
   }
 
   function buildTenantPath(path = "") {
-    return `/${storeSlug}/${normalizeTenantPage(path)}`;
+    const page = normalizeTenantPage(path);
+    if (getIsLocalHost()) {
+      const fileName = page === "admin" ? "admin.html" : "shein-order.html";
+      return `/${fileName}?store=${encodeURIComponent(storeSlug)}`;
+    }
+
+    return `/${storeSlug}/${page}`;
   }
 
   const tenantRoute = getTenantRoute();
@@ -159,9 +177,11 @@
 
   function mapOrderDoc(snapshot) {
     const data = snapshot.data() || {};
+    const storeId = snapshot.ref.parent.parent ? snapshot.ref.parent.parent.id : storeSlug;
 
     return {
       id: snapshot.id,
+      storeId,
       name: typeof data.name === "string" ? data.name : "",
       phone: typeof data.phone === "string" ? data.phone : "",
       link: typeof data.link === "string" ? data.link : "",
@@ -197,6 +217,10 @@
       ORDER_COLLECTION_NAME,
     );
 
+    function isSuperAdminUser(user = auth.currentUser) {
+      return Boolean(user && String(user.email || "").toLowerCase() === SUPER_ADMIN_EMAIL);
+    }
+
     async function createOrder(input) {
       const order = serializeOrder({
         name: input.name,
@@ -216,6 +240,30 @@
     function subscribeToOrders(onChange, onError) {
       const ordersQuery = firestoreModule.query(
         ordersCollection,
+        firestoreModule.orderBy("time", "desc"),
+      );
+
+      return firestoreModule.onSnapshot(
+        ordersQuery,
+        (snapshot) => onChange(snapshot.docs.map(mapOrderDoc)),
+        (error) => onError?.(error),
+      );
+    }
+
+    function subscribeToStores(onChange, onError) {
+      return firestoreModule.onSnapshot(
+        firestoreModule.collection(db, STORE_COLLECTION_NAME),
+        (snapshot) => onChange(snapshot.docs.map((docSnapshot) => ({
+          id: docSnapshot.id,
+          ...docSnapshot.data(),
+        }))),
+        (error) => onError?.(error),
+      );
+    }
+
+    function subscribeToAllOrders(onChange, onError) {
+      const ordersQuery = firestoreModule.query(
+        firestoreModule.collectionGroup(db, ORDER_COLLECTION_NAME),
         firestoreModule.orderBy("time", "desc"),
       );
 
@@ -348,6 +396,7 @@
       auth,
       db,
       storeSlug,
+      superAdminEmail: SUPER_ADMIN_EMAIL,
       ordersStorageKey: tenantOrdersStorageKey,
       sanitizeStoreSlug,
       buildStoreLinks,
@@ -355,12 +404,15 @@
       createStore,
       createOrder,
       subscribeToOrders,
+      subscribeToStores,
+      subscribeToAllOrders,
       saveOrder,
       setOrderStatus,
       deleteOrderById,
       clearAllOrders,
       migrateLegacyOrdersIfNeeded,
       ensureAdminStore,
+      isSuperAdminUser,
       signInWithGoogle,
       signOutAdmin,
       onAdminAuthStateChanged,

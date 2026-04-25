@@ -10,6 +10,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == "hnadamohamed18@gmail.com";
+    }
+
     function isStoreOwner(storeId) {
       return isSignedIn()
         && exists(storePath(storeId))
@@ -81,14 +86,19 @@ service cloud.firestore {
     match /stores/{storeId} {
       allow create: if isValidStoreCreate(storeId);
       allow get: if true;
-      allow list: if false;
+      allow list: if isSuperAdmin();
       allow update: if isStoreOwner(storeId) && isValidStoreUpdate(storeId);
       allow delete: if false;
 
       match /orders/{orderId} {
         allow create: if isStoreOwner(storeId) || isValidOrderCreate(storeId);
-        allow read, update, delete: if isStoreOwner(storeId);
+        allow read: if isStoreOwner(storeId) || isSuperAdmin();
+        allow update, delete: if isStoreOwner(storeId);
       }
+    }
+
+    match /{path=**}/orders/{orderId} {
+      allow read: if isSuperAdmin();
     }
   }
 }

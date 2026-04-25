@@ -1554,7 +1554,8 @@
 
   /* ── AUTH ── */
   const tenantOrdersStorageKey = (window.LamarStore && window.LamarStore.ordersStorageKey) || 'lamar_orders_fadwa';
-  let ordersCache = JSON.parse(localStorage.getItem(tenantOrdersStorageKey) || '[]');
+  let ordersCache = [];
+  let tenantAccessGranted = false;
   let ordersUnsubscribe = null;
   let saveQueueTimer = null;
   const pendingOrderSaves = new Map();
@@ -1629,24 +1630,37 @@
       ordersUnsubscribe();
       ordersUnsubscribe = null;
     }
+    tenantAccessGranted = false;
+    ordersCache = [];
+    pendingOrderSaves.clear();
+    localStorage.removeItem(tenantOrdersStorageKey);
     document.getElementById('loginGate').style.display = 'flex';
     document.getElementById('app').classList.remove('visible');
+    renderAll();
   }
 
   async function openDashboard(user) {
-    document.getElementById('loginGate').style.display = 'none';
-    document.getElementById('app').classList.add('visible');
-    renderAll();
+    tenantAccessGranted = false;
+    ordersCache = [];
+    pendingOrderSaves.clear();
+    localStorage.removeItem(tenantOrdersStorageKey);
+    document.getElementById('app').classList.remove('visible');
+    document.getElementById('loginGate').style.display = 'flex';
+    setLoginMessage('Checking store ownership...');
 
     try {
       const api = await getFirebaseOrdersApi();
       await api.ensureAdminStore(user);
+      tenantAccessGranted = true;
+      setLoginMessage('');
+      document.getElementById('loginGate').style.display = 'none';
+      document.getElementById('app').classList.add('visible');
+      renderAll();
       await api.migrateLegacyOrdersIfNeeded();
       if (ordersUnsubscribe) ordersUnsubscribe();
       ordersUnsubscribe = api.subscribeToOrders((orders) => {
         const previousCount = ordersCache.length;
         ordersCache = orders;
-        localStorage.setItem(tenantOrdersStorageKey, JSON.stringify(ordersCache));
 
         if (ordersCache.length > previousCount) {
           const flash = document.getElementById('newFlash');
@@ -1661,6 +1675,7 @@
       });
     } catch (error) {
       console.error('Firebase dashboard setup failed:', error);
+      showLoginGate();
       alert('This store is not ready for this Google account. Create it from /owner.html first, or sign in with the store owner account.');
     }
   }
@@ -1698,7 +1713,7 @@
   /* ── DATE ── */
 
   /* ── DATA ── */
-  function getOrders() { return ordersCache; }
+  function getOrders() { return tenantAccessGranted ? ordersCache : []; }
 
   function queueOrderSave(order) {
     pendingOrderSaves.set(String(order.id), JSON.parse(JSON.stringify(order)));
@@ -1717,8 +1732,8 @@
   }
 
   function saveOrders(o) {
+    if (!tenantAccessGranted) return;
     ordersCache = o;
-    localStorage.setItem(tenantOrdersStorageKey, JSON.stringify(ordersCache));
     if (detailOrderId) {
       const active = ordersCache.find(x => String(x.id) === String(detailOrderId));
       if (active) queueOrderSave(active);
@@ -2242,7 +2257,6 @@
     if (!confirm(t('clear_confirm'))) return;
     const ids = getOrders().map(o => String(o.id));
     ordersCache = [];
-    localStorage.removeItem(tenantOrdersStorageKey);
     renderAll();
 
     try {
@@ -2610,6 +2624,7 @@
   /* ── REAL-TIME ── */
   let lastCount = getOrders().length;
   window.addEventListener('storage', e => {
+    if (!tenantAccessGranted) return;
     if (e.key !== tenantOrdersStorageKey) return;
     const newOrders = JSON.parse(e.newValue || '[]');
     if (newOrders.length > lastCount) {

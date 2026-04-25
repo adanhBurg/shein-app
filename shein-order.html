@@ -527,7 +527,8 @@
         }, 2200);
       } catch (error) {
         console.error('Order submission failed:', error);
-        alert(`Could not send the order for store "${window.LamarStore.slug}". Please check that this store exists, then try again.`);
+        const code = error && error.code ? ` (${error.code})` : '';
+        alert(`Could not send the order for store "${window.LamarStore.slug}"${code}. Check the Firestore rules deployment and the order link format.`);
         btn.textContent = originalText;
       } finally {
         btn.disabled = false;

@@ -153,7 +153,7 @@ export default function CustomerOrderPage() {
   ].filter(Boolean).join('\n');
 
   const shareConfirmationOnWhatsApp = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(buildConfirmationText())}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(`Order number: ${createdOrder?.orderNumber || createdOrderNumber}`)}`, '_blank');
   };
 
   const downloadConfirmationImage = async () => {
@@ -265,8 +265,8 @@ export default function CustomerOrderPage() {
         </Header>
 
         <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div ref={confirmationRef} style={{ background: T.card, borderRadius: 16, padding: '18px 16px', boxShadow: `0 3px 18px ${T.shadow}`, border: `1px solid ${T.border}` }}>
-            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <div ref={confirmationRef} style={{ background: T.card, borderRadius: 16, padding: '28px 16px', boxShadow: `0 3px 18px ${T.shadow}`, border: `1px solid ${T.border}` }}>
+            <div style={{ textAlign: 'center' }}>
               <div style={{ color: T.textMuted, fontSize: 11, marginBottom: 6 }}>رقم الطلب</div>
               <div style={{ color: T.accent, fontSize: 25, fontWeight: 900, letterSpacing: 0, direction: 'ltr' }}>
                 {createdOrder.orderNumber || createdOrderNumber}
@@ -274,7 +274,7 @@ export default function CustomerOrderPage() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {confirmationRows.slice(1).map(([label, value]) => (
+              {[].map(([label, value]) => (
                 <div key={label} style={{ background: T.bg, borderRadius: 11, padding: '10px 12px' }}>
                   <div style={{ color: T.textMuted, fontSize: 10, marginBottom: 4, textAlign: isRTL ? 'right' : 'left' }}>{label}</div>
                   <div style={{ color: T.text, fontSize: label === 'رابط المنتج' ? 11 : 13, fontWeight: 700, direction: label === 'رابط المنتج' || label === 'الهاتف' ? 'ltr' : t.dir, textAlign: label === 'رابط المنتج' || label === 'الهاتف' ? 'left' : (isRTL ? 'right' : 'left'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: label === 'رابط المنتج' ? 'nowrap' : 'normal' }}>

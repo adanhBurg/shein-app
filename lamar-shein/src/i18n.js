@@ -56,6 +56,9 @@ export const I18N = {
     invoiceImageCopied: 'تم نسخ صورة الفاتورة.',
     invoiceImageDownloaded: 'تم تحميل صورة الفاتورة.',
     continueWithGoogle: 'متابعة مع Google',
+    displaySize: 'حجم العرض',
+    decreaseSize: 'تصغير',
+    increaseSize: 'تكبير',
   },
   fr: {
     dir: 'ltr', lang: 'fr',
@@ -112,6 +115,9 @@ export const I18N = {
     invoiceImageCopied: 'Image de facture copiée.',
     invoiceImageDownloaded: 'Image de facture téléchargée.',
     continueWithGoogle: 'Continuer avec Google',
+    displaySize: "Taille d'affichage",
+    decreaseSize: 'Réduire',
+    increaseSize: 'Agrandir',
   },
   en: {
     dir: 'ltr', lang: 'en',
@@ -168,6 +174,9 @@ export const I18N = {
     invoiceImageCopied: 'Invoice image copied.',
     invoiceImageDownloaded: 'Invoice image downloaded.',
     continueWithGoogle: 'Continue with Google',
+    displaySize: 'Display size',
+    decreaseSize: 'Decrease',
+    increaseSize: 'Increase',
   },
 };
 

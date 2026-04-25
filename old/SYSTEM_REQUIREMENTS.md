@@ -100,7 +100,7 @@ Owner/admin restrictions:
 The super-admin is a single hard-coded email in the current app:
 
 ```text
-hnadamohamed18@gmail.com
+saidhnad7@gmail.com
 ```
 
 Super-admin capabilities:

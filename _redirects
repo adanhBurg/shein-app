@@ -1,0 +1,11 @@
+/owner /owner.html 200
+/:store/admin /admin.html 200
+/:store/admin.html /admin.html 200
+/:store/order /shein-order.html 200
+/:store/shein-order.html /shein-order.html 200
+/:store/ /shein-order.html 200
+/store/:store/admin /admin.html 200
+/store/:store/admin.html /admin.html 200
+/store/:store/order /shein-order.html 200
+/store/:store/shein-order.html /shein-order.html 200
+/store/:store/ /shein-order.html 200

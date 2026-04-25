@@ -24,44 +24,44 @@
     return slug || "fadwa";
   }
 
+  function getPathStoreSlug() {
+    const segments = window.location.pathname
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    const pageNames = new Set(["index.html", "owner.html", "admin.html", "shein-order.html"]);
+
+    if (!segments.length) return null;
+    if (segments[0] === "store" && segments[1]) return sanitizeStoreSlug(segments[1]);
+    if (pageNames.has(segments[0])) return null;
+
+    return sanitizeStoreSlug(segments[0]);
+  }
+
   function resolveStoreSlug() {
+    const pathStore = getPathStoreSlug();
+    if (pathStore) return pathStore;
+
     const params = new URLSearchParams(window.location.search);
     const queryStore = params.get("store");
     if (queryStore) return sanitizeStoreSlug(queryStore);
 
-    const host = window.location.hostname.toLowerCase();
-    if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
-      return sanitizeStoreSlug(localStorage.getItem("lamar_store_slug") || "fadwa");
-    }
-
-    const firstLabel = host.split(".")[0];
-    return sanitizeStoreSlug(firstLabel);
+    return sanitizeStoreSlug(localStorage.getItem("lamar_store_slug") || "fadwa");
   }
 
   function buildStoreLinks(value) {
     const slug = sanitizeStoreSlug(value);
-    const protocol = window.location.protocol === "https:" ? "https" : "http";
-    const port = window.location.port ? `:${window.location.port}` : "";
-    const host = window.location.hostname.toLowerCase();
-    let tenantHost;
-
-    if (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host === "::1" ||
-      host.endsWith(".local")
-    ) {
-      tenantHost = `${slug}.local`;
-    } else {
-      const parts = host.split(".");
-      const parentDomain = parts.length > 2 ? parts.slice(1).join(".") : host;
-      tenantHost = `${slug}.${parentDomain}`;
-    }
+    const origin = window.location.origin;
 
     return {
-      order: `${protocol}://${tenantHost}${port}/`,
-      admin: `${protocol}://${tenantHost}${port}/admin.html`,
+      order: `${origin}/${slug}/`,
+      admin: `${origin}/${slug}/admin.html`,
     };
+  }
+
+  function buildTenantPath(path = "") {
+    const normalizedPath = String(path || "").replace(/^\/+/, "");
+    return normalizedPath ? `/${storeSlug}/${normalizedPath}` : `/${storeSlug}/`;
   }
 
   const storeSlug = resolveStoreSlug();
@@ -73,6 +73,7 @@
     slug: storeSlug,
     ordersStorageKey: tenantOrdersStorageKey,
     buildLinks: buildStoreLinks,
+    tenantPath: buildTenantPath,
     sanitizeSlug: sanitizeStoreSlug,
   };
 

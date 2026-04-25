@@ -3,27 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/" />
   <title>Lamar – Discover Your Style</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <script>
-    (function () {
-      const PRODUCTION_BASE_DOMAIN = 'oparf.com';
-      const host = window.location.hostname.toLowerCase();
-      const isLocalTenantHost = host.endsWith('.local') && host.split('.')[0] !== 'www';
-      const isProductionTenantHost =
-        host.endsWith(`.${PRODUCTION_BASE_DOMAIN}`) &&
-        host !== PRODUCTION_BASE_DOMAIN &&
-        !host.startsWith('www.');
-      const isTenantHost = isLocalTenantHost || isProductionTenantHost;
-      const isRootPage = window.location.pathname === '/' || window.location.pathname.endsWith('/index.html');
-
-      if (isTenantHost && isRootPage) {
-        window.location.replace('shein-order.html');
-      }
-    })();
-  </script>
 </head>
 <body>
 

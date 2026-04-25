@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/" />
   <title>SHEIN Order – Lamar</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -306,6 +307,10 @@
     const adminLink = document.getElementById('adminLink');
     const headerTitle = document.getElementById('headerTitle');
     const headerDesc = document.getElementById('headerDesc');
+
+    if (window.LamarStore) {
+      adminLink.href = window.LamarStore.tenantPath('admin.html');
+    }
 
     /* ── I18N ── */
     const LANGS = {

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/" />
   <title>Fadwa's Dashboard – Lamar</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@300;400;500;600;700&family=Dancing+Script:wght@700&family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" />
@@ -1558,6 +1559,15 @@
   let saveQueueTimer = null;
   const pendingOrderSaves = new Map();
 
+  if (window.LamarStore) {
+    document.querySelectorAll('a[href="shein-order.html"]').forEach(link => {
+      link.href = window.LamarStore.tenantPath();
+    });
+    document.querySelectorAll('a[href="index.html"]').forEach(link => {
+      link.href = '/';
+    });
+  }
+
   function getFirebaseOrdersApi() {
     if (!window.LamarFirebaseReady) {
       return Promise.reject(new Error('Firebase is not available.'));
@@ -1651,7 +1661,7 @@
       });
     } catch (error) {
       console.error('Firebase dashboard setup failed:', error);
-      alert('This store is not ready for this Google account. Create it from owner.html first, or sign in with the store owner account.');
+      alert('This store is not ready for this Google account. Create it from /owner.html first, or sign in with the store owner account.');
     }
   }
 

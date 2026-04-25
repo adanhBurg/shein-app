@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/" />
   <title>Create Store - Lamar</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -214,7 +215,7 @@
       <div class="owner-field">
         <label for="storeSlug">Store link</label>
         <input id="storeSlug" autocomplete="off" inputmode="url" placeholder="fadwa" required />
-        <p class="slug-preview">Preview: <strong id="slugPreview">fadwa.local</strong></p>
+        <p class="slug-preview">Preview: <strong id="slugPreview">oparf.com/fadwa/</strong></p>
       </div>
       <button class="owner-button" id="createBtn" type="submit">Create store</button>
     </form>
@@ -241,7 +242,7 @@
 
     <nav class="owner-nav">
       <a href="index.html">Storefront</a>
-      <a href="shein-order.html">Current order page</a>
+      <a href="shein-order.html" id="currentOrderLink">Current order page</a>
     </nav>
   </main>
 
@@ -261,6 +262,7 @@
     const result = document.getElementById('ownerResult');
     const orderLink = document.getElementById('orderLink');
     const adminLink = document.getElementById('adminLink');
+    const currentOrderLink = document.getElementById('currentOrderLink');
 
     let firebaseApi = null;
 
@@ -272,7 +274,9 @@
     function updatePreview() {
       const slug = window.LamarStore.sanitizeSlug(storeSlug.value || storeName.value || 'fadwa');
       const links = window.LamarStore.buildLinks(slug);
-      slugPreview.textContent = new URL(links.order).host;
+      const previewUrl = new URL(links.order);
+      slugPreview.textContent = `${previewUrl.host}${previewUrl.pathname}`;
+      currentOrderLink.href = links.order;
       return { slug, links };
     }
 

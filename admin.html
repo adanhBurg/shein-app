@@ -1667,6 +1667,11 @@
 
   getFirebaseOrdersApi()
     .then(api => {
+      if (window.LamarStore && !window.LamarStore.hasValidAdminRoute) {
+        setLoginMessage('This admin link is unavailable. Open admin from /store-name/admin.', true);
+        return;
+      }
+
       api.onAdminAuthStateChanged(user => {
         if (user) openDashboard(user);
         else showLoginGate();

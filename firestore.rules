@@ -80,7 +80,7 @@ service cloud.firestore {
 
     match /stores/{storeId} {
       allow create: if isValidStoreCreate(storeId);
-      allow get: if isSignedIn();
+      allow get: if true;
       allow list: if false;
       allow update: if isStoreOwner(storeId) && isValidStoreUpdate(storeId);
       allow delete: if false;

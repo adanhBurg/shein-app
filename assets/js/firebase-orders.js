@@ -24,29 +24,51 @@
     return slug || "fadwa";
   }
 
-  function getPathStoreSlug() {
+  function getTenantRoute() {
     const segments = window.location.pathname
       .split("/")
       .map((segment) => segment.trim())
       .filter(Boolean);
-    const pageNames = new Set(["index.html", "owner.html", "admin.html", "shein-order.html"]);
+    const validPages = new Set(["orders", "admin"]);
     const reservedPrefixes = ["index", "owner", "admin", "shein-order", "assets", "style.css", "script.js"];
 
     if (!segments.length) return null;
-    if (segments[0] === "store" && segments[1]) return sanitizeStoreSlug(segments[1]);
-    if (pageNames.has(segments[0])) return null;
     if (reservedPrefixes.some((prefix) => segments[0].startsWith(prefix))) return null;
 
-    return sanitizeStoreSlug(segments[0]);
+    const hasStorePrefix = segments[0] === "store";
+    const slugSegment = hasStorePrefix ? segments[1] : segments[0];
+    const pageSegment = hasStorePrefix ? segments[2] : segments[1];
+
+    if (!slugSegment || !pageSegment || !validPages.has(pageSegment)) return null;
+    if (segments.length !== (hasStorePrefix ? 3 : 2)) return null;
+
+    return {
+      slug: sanitizeStoreSlug(slugSegment),
+      page: pageSegment,
+    };
+  }
+
+  function getPathStoreSlug() {
+    const route = getTenantRoute();
+    return route ? route.slug : null;
+  }
+
+  function getLocalQueryStoreSlug() {
+    const host = window.location.hostname.toLowerCase();
+    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
+    if (!isLocalHost) return null;
+
+    const params = new URLSearchParams(window.location.search);
+    const queryStore = params.get("store");
+    return queryStore ? sanitizeStoreSlug(queryStore) : null;
   }
 
   function resolveStoreSlug() {
     const pathStore = getPathStoreSlug();
     if (pathStore) return pathStore;
 
-    const params = new URLSearchParams(window.location.search);
-    const queryStore = params.get("store");
-    if (queryStore) return sanitizeStoreSlug(queryStore);
+    const localQueryStore = getLocalQueryStoreSlug();
+    if (localQueryStore) return localQueryStore;
 
     return sanitizeStoreSlug(localStorage.getItem("lamar_store_slug") || "fadwa");
   }
@@ -55,11 +77,7 @@
     const pathStore = getPathStoreSlug();
     if (pathStore) return pathStore;
 
-    const params = new URLSearchParams(window.location.search);
-    const queryStore = params.get("store");
-    if (queryStore) return sanitizeStoreSlug(queryStore);
-
-    return null;
+    return getLocalQueryStoreSlug();
   }
 
   function buildStoreLinks(value) {
@@ -67,16 +85,23 @@
     const origin = window.location.origin;
 
     return {
-      order: `${origin}/${slug}/`,
-      admin: `${origin}/${slug}/admin.html`,
+      order: `${origin}/${slug}/orders`,
+      admin: `${origin}/${slug}/admin`,
     };
   }
 
-  function buildTenantPath(path = "") {
-    const normalizedPath = String(path || "").replace(/^\/+/, "");
-    return normalizedPath ? `/${storeSlug}/${normalizedPath}` : `/${storeSlug}/`;
+  function normalizeTenantPage(path = "") {
+    const normalizedPath = String(path || "").replace(/^\/+/, "").replace(/\.html$/i, "");
+    if (!normalizedPath || normalizedPath === "shein-order" || normalizedPath === "order") return "orders";
+    if (normalizedPath === "admin") return "admin";
+    return normalizedPath;
   }
 
+  function buildTenantPath(path = "") {
+    return `/${storeSlug}/${normalizeTenantPage(path)}`;
+  }
+
+  const tenantRoute = getTenantRoute();
   const storeSlug = resolveStoreSlug();
   const urlStoreSlug = getUrlStoreSlug();
   const tenantOrdersStorageKey = `lamar_orders_${storeSlug}`;
@@ -87,6 +112,9 @@
     slug: storeSlug,
     urlSlug: urlStoreSlug,
     hasUrlStore: Boolean(urlStoreSlug),
+    routePage: tenantRoute?.page || null,
+    hasValidOrderRoute: tenantRoute?.page === "orders" || Boolean(getLocalQueryStoreSlug()),
+    hasValidAdminRoute: tenantRoute?.page === "admin" || Boolean(getLocalQueryStoreSlug()),
     ordersStorageKey: tenantOrdersStorageKey,
     buildLinks: buildStoreLinks,
     tenantPath: buildTenantPath,

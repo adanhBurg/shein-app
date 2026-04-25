@@ -12,7 +12,7 @@
   const ORDER_COLLECTION_NAME = "orders";
   const LEGACY_MIGRATION_KEY_PREFIX = "lamar_firestore_orders_migrated";
   const FIREBASE_VERSION = "12.7.0";
-  const SUPER_ADMIN_EMAIL = "hnadamohamed18@gmail.com";
+  const SUPER_ADMIN_EMAIL = "saidhnad7@gmail.com";
 
   function sanitizeStoreSlug(value) {
     const slug = String(value || "")

@@ -23,7 +23,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
-export const SUPER_ADMIN_EMAIL = 'saidhnad7@gmail.com';
+export const SUPER_ADMIN_EMAIL = 'hnadamohamed18@gmail.com';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAFPXsKZXBGBIdRPWcNCTGdGFc2HJXIKpI',

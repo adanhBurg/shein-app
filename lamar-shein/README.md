@@ -182,7 +182,7 @@ recognition.start();
 The super-admin email is defined in `src/pages/SuperAdmin.jsx`:
 
 ```js
-const SUPER_ADMIN_EMAIL = 'saidhnad7@gmail.com';
+const SUPER_ADMIN_EMAIL = 'hnadamohamed18@gmail.com';
 ```
 
 Change this to configure a different super-admin account.

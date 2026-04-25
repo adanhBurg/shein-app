@@ -12,7 +12,7 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn()
-        && request.auth.token.email == "saidhnad7@gmail.com";
+        && request.auth.token.email == "hnadamohamed18@gmail.com";
     }
 
     function isStoreOwner(storeId) {

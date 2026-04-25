@@ -30,10 +30,12 @@
       .map((segment) => segment.trim())
       .filter(Boolean);
     const pageNames = new Set(["index.html", "owner.html", "admin.html", "shein-order.html"]);
+    const reservedPrefixes = ["index", "owner", "admin", "shein-order", "assets", "style.css", "script.js"];
 
     if (!segments.length) return null;
     if (segments[0] === "store" && segments[1]) return sanitizeStoreSlug(segments[1]);
     if (pageNames.has(segments[0])) return null;
+    if (reservedPrefixes.some((prefix) => segments[0].startsWith(prefix))) return null;
 
     return sanitizeStoreSlug(segments[0]);
   }

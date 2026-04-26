@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, devices } from 'playwright';
@@ -163,6 +164,82 @@ async function withProfileLock(profileKey, task) {
 function profileDirForRegion(region) {
   const country = String(region.country || 'GLOBAL').toLowerCase().replace(/[^a-z0-9_-]/g, '');
   return path.join(DEFAULT_PROFILE_ROOT, `shein-${country || 'global'}-profile`);
+}
+
+async function waitForDebugEndpoint(port) {
+  const deadline = Date.now() + 20_000;
+  const url = `http://127.0.0.1:${port}/json/list`;
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return true;
+    } catch {
+      // Chromium is still starting.
+    }
+    await sleep(500);
+  }
+
+  return false;
+}
+
+async function openDirectDebugSession(targetUrl, region, options = {}) {
+  const device = devices[DEVICE_NAME];
+  const profileDir = profileDirForRegion(region);
+  await mkdir(profileDir, { recursive: true });
+
+  const executablePath = chromium.executablePath();
+  const viewport = device.viewport || { width: 390, height: 844 };
+  const args = [
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-blink-features=AutomationControlled',
+    '--no-first-run',
+    '--no-default-browser-check',
+    `--user-data-dir=${profileDir}`,
+    '--remote-debugging-address=0.0.0.0',
+    `--remote-debugging-port=${options.remoteDebuggingPort}`,
+    `--user-agent=${device.userAgent}`,
+    `--window-size=${viewport.width},${viewport.height}`,
+    '--force-device-scale-factor=3',
+    `--lang=${region.locale}`,
+  ];
+
+  if (options.headless) {
+    args.push('--headless=new');
+    args.push('--hide-scrollbars');
+    args.push('--mute-audio');
+  }
+
+  args.push(targetUrl);
+
+  const child = spawn(executablePath, args, {
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+
+  child.on('exit', (code, signal) => {
+    if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGINT') {
+      console.error(`Chromium debug session exited with code ${code ?? 'null'} signal ${signal ?? 'null'}.`);
+    }
+  });
+
+  const ready = await waitForDebugEndpoint(options.remoteDebuggingPort);
+
+  console.log(`SHEIN ${region.country} debug session is ${ready ? 'ready' : 'starting slowly'}.`);
+  console.log(`Profile: ${profileDir}`);
+  console.log(`URL: ${targetUrl}`);
+  console.log(`DevTools list: http://127.0.0.1:${options.remoteDebuggingPort}/json/list`);
+  console.log('Leave this process running while you solve verification. Press Ctrl+C when done.');
+
+  await new Promise((resolve) => {
+    const stop = () => {
+      child.kill('SIGTERM');
+      resolve();
+    };
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+    child.once('exit', resolve);
+  });
 }
 
 function parseMoney(value) {
@@ -493,16 +570,22 @@ export async function openSheinSession(options = {}) {
   const countryPath = country.toLowerCase();
   const targetUrl = options.url || `https://m.shein.com/${countryPath}/`;
   const normalizedUrl = normalizeShareJumpUrl(validateSheinUrl(targetUrl));
-  const { context, region } = await createSheinContext(normalizedUrl, {
+  const region = browserRegionFromUrl(normalizedUrl);
+
+  if (options.remoteDebuggingPort) {
+    await openDirectDebugSession(normalizedUrl, region, options);
+    return;
+  }
+
+  const { context, region: contextRegion } = await createSheinContext(normalizedUrl, {
     headless: Boolean(options.headless),
-    remoteDebuggingPort: options.remoteDebuggingPort,
   });
 
   const page = await context.newPage();
   await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
 
-  console.log(`SHEIN ${region.country} session is open.`);
-  console.log(`Profile: ${profileDirForRegion(region)}`);
+  console.log(`SHEIN ${contextRegion.country} session is open.`);
+  console.log(`Profile: ${profileDirForRegion(contextRegion)}`);
   console.log(`URL: ${page.url()}`);
   if (options.remoteDebuggingPort) {
     console.log(`Remote debugging: http://127.0.0.1:${options.remoteDebuggingPort}`);

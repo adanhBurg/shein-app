@@ -9,6 +9,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev && npx playwright install --with-deps chromium
 
 COPY server ./server
+COPY scripts ./scripts
 
 EXPOSE 8787
 

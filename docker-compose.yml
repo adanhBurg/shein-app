@@ -16,7 +16,13 @@ services:
       dockerfile: Dockerfile.backend
     environment:
       PORT: "8787"
+      SHEIN_PROFILE_ROOT: "/data/playwright"
+      SHEIN_SCAN_CACHE_DIR: "/data/playwright/cache"
       CORS_ORIGIN: "http://localhost:${FRONTEND_PORT:-8181}"
+    volumes:
+      - shein-playwright-data:/data/playwright
+    ports:
+      - "${SHEIN_DEBUG_BIND:-127.0.0.1}:${SHEIN_DEBUG_PORT:-9222}:9222"
     expose:
       - "8787"
     healthcheck:
@@ -26,3 +32,6 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
+
+volumes:
+  shein-playwright-data:

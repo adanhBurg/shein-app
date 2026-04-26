@@ -89,6 +89,36 @@ The extractor reads:
 
 It also writes debug artifacts to `output/shein-cart-extract/latest/`, including `report.json`, network JSON, DOM text, and a screenshot. This folder is ignored by git.
 
+## Persistent SHEIN Session
+
+The backend scanner uses a persistent Playwright profile instead of a fresh browser profile for every request. In Docker, that profile is stored in the `shein-playwright-data` volume at:
+
+```txt
+/data/playwright
+```
+
+This helps Spain links because SHEIN may challenge a fresh datacenter browser after repeated scans. Successful scans are cached, and repeated reads for the same link are throttled.
+
+If SHEIN shows CAPTCHA or verification for Spain links on the VM, refresh the saved session:
+
+```bash
+docker compose exec backend npm run shein:session -- --country ES --headless --remote-debugging-port 9222
+```
+
+Then tunnel the debug port from your computer:
+
+```bash
+ssh -L 9222:127.0.0.1:9222 hnada6885@34.30.155.206
+```
+
+Open:
+
+```txt
+http://127.0.0.1:9222
+```
+
+Complete the SHEIN verification in the opened page target, then press `Ctrl+C` in the session command. The next scans reuse that same profile.
+
 ## App Integration
 
 The customer order screen calls the scanner automatically while the order is being created:

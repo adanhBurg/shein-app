@@ -1,10 +1,23 @@
+import crypto from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { chromium, devices } from 'playwright';
 
 const DEVICE_NAME = 'iPhone 13';
 const MAX_ITEMS = 20;
+const DEFAULT_PROFILE_ROOT = process.env.SHEIN_PROFILE_ROOT || path.resolve('.cache/shein-playwright');
+const DEFAULT_CACHE_DIR = process.env.SHEIN_SCAN_CACHE_DIR || path.join(DEFAULT_PROFILE_ROOT, 'cache');
+const CACHE_TTL_MS = Number(process.env.SHEIN_SCAN_CACHE_TTL_MS || 6 * 60 * 60 * 1000);
+const MIN_SCAN_INTERVAL_MS = Number(process.env.SHEIN_MIN_SCAN_INTERVAL_MS || 15_000);
+const profileLocks = new Map();
+const lastScanByKey = new Map();
 
 function normalizeText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function validateSheinUrl(value) {
@@ -58,14 +71,98 @@ function browserRegionFromUrl(value) {
   ).toUpperCase();
 
   if (country === 'ES') {
-    return { locale: 'es-ES', timezoneId: 'Europe/Madrid' };
+    return { country, locale: 'es-ES', timezoneId: 'Europe/Madrid' };
   }
 
   if (country === 'MA') {
-    return { locale: 'fr-MA', timezoneId: 'Africa/Casablanca' };
+    return { country, locale: 'fr-MA', timezoneId: 'Africa/Casablanca' };
   }
 
-  return { locale: 'en-US', timezoneId: 'UTC' };
+  return { country: country || 'GLOBAL', locale: 'en-US', timezoneId: 'UTC' };
+}
+
+function cacheKeyFromUrl(value) {
+  const url = new URL(value);
+  const relevant = new URL('https://shein-cache-key.local/');
+
+  for (const key of ['link', 'shc', 'group_id', 'localcountry', 'local_country', 'url_from', 'cart_share']) {
+    const current = url.searchParams.get(key);
+    if (current) relevant.searchParams.set(key, current);
+  }
+
+  if ([...relevant.searchParams.keys()].length === 0) {
+    relevant.searchParams.set('url', url.toString());
+  }
+
+  return crypto.createHash('sha256').update(relevant.toString()).digest('hex');
+}
+
+async function readCachedResult(key) {
+  if (!CACHE_TTL_MS || CACHE_TTL_MS < 1) return null;
+
+  try {
+    const file = path.join(DEFAULT_CACHE_DIR, `${key}.json`);
+    const cached = JSON.parse(await readFile(file, 'utf8'));
+    const age = Date.now() - Date.parse(cached.cachedAt || '');
+
+    if (Number.isFinite(age) && age >= 0 && age <= CACHE_TTL_MS && cached.result?.ok) {
+      return { ...cached.result, cached: true, cachedAt: cached.cachedAt };
+    }
+  } catch {
+    // Missing or invalid cache entries are treated as a normal cache miss.
+  }
+
+  return null;
+}
+
+async function writeCachedResult(key, result) {
+  if (!result?.ok || !CACHE_TTL_MS || CACHE_TTL_MS < 1) return;
+
+  await mkdir(DEFAULT_CACHE_DIR, { recursive: true });
+  await writeFile(
+    path.join(DEFAULT_CACHE_DIR, `${key}.json`),
+    JSON.stringify({ cachedAt: new Date().toISOString(), result }, null, 2),
+  );
+}
+
+async function throttleScan(key) {
+  if (!MIN_SCAN_INTERVAL_MS || MIN_SCAN_INTERVAL_MS < 1) return;
+
+  const lastScan = lastScanByKey.get(key) || 0;
+  const waitMs = MIN_SCAN_INTERVAL_MS - (Date.now() - lastScan);
+
+  if (waitMs > 0) {
+    await sleep(waitMs);
+  }
+
+  lastScanByKey.set(key, Date.now());
+}
+
+async function withProfileLock(profileKey, task) {
+  const previous = profileLocks.get(profileKey) || Promise.resolve();
+  let release;
+  const next = new Promise((resolve) => {
+    release = resolve;
+  });
+  const chained = previous.then(() => next);
+
+  profileLocks.set(profileKey, chained);
+
+  await previous;
+
+  try {
+    return await task();
+  } finally {
+    release();
+    if (profileLocks.get(profileKey) === chained) {
+      profileLocks.delete(profileKey);
+    }
+  }
+}
+
+function profileDirForRegion(region) {
+  const country = String(region.country || 'GLOBAL').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return path.join(DEFAULT_PROFILE_ROOT, `shein-${country || 'global'}-profile`);
 }
 
 function parseMoney(value) {
@@ -217,6 +314,22 @@ async function clickPossibleConsent(page) {
   }
 }
 
+async function detectChallenge(page) {
+  const details = await page.evaluate(() => {
+    const text = document.body?.innerText || '';
+    return {
+      title: document.title || '',
+      text: text.slice(0, 4000),
+      url: location.href,
+    };
+  }).catch(() => ({ title: '', text: '', url: page.url() }));
+
+  const haystack = `${details.title} ${details.text} ${details.url}`.toLowerCase();
+  const challenged = /captcha|robot|verify|verification|unusual traffic|blocked|access denied|challenge|slider|puzzle/.test(haystack);
+
+  return challenged ? details : null;
+}
+
 async function extractDomItems(page) {
   const cartItems = await page.evaluate(() => {
     const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
@@ -266,28 +379,43 @@ function addDomPlatforms(jsonItems, domItems) {
   });
 }
 
-export async function scanSheinCart(targetUrl) {
+async function createSheinContext(targetUrl, options = {}) {
   const device = devices[DEVICE_NAME];
   const region = browserRegionFromUrl(targetUrl);
-  const browser = await chromium.launch({
-    headless: true,
+  const args = [
+    '--no-sandbox',
+    '--disable-blink-features=AutomationControlled',
+  ];
+
+  if (options.remoteDebuggingPort) {
+    args.push('--remote-debugging-address=0.0.0.0');
+    args.push(`--remote-debugging-port=${options.remoteDebuggingPort}`);
+  }
+
+  const context = await chromium.launchPersistentContext(profileDirForRegion(region), {
+    ...device,
+    headless: options.headless ?? true,
     channel: 'chromium',
-    args: [
-      '--no-sandbox',
-      '--disable-blink-features=AutomationControlled',
-    ],
+    locale: region.locale,
+    timezoneId: region.timezoneId,
+    args,
   });
 
-  try {
-    const context = await browser.newContext({
-      ...device,
-      locale: region.locale,
-      timezoneId: region.timezoneId,
-    });
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  });
+
+  return { context, region };
+}
+
+export async function scanSheinCart(targetUrl) {
+  const region = browserRegionFromUrl(targetUrl);
+
+  return withProfileLock(region.country, async () => {
+    const { context } = await createSheinContext(targetUrl, { headless: true });
+
+    try {
     const page = await context.newPage();
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
     const jsonPayloads = [];
 
     page.on('response', async (response) => {
@@ -310,6 +438,19 @@ export async function scanSheinCart(targetUrl) {
     await clickPossibleConsent(page);
     await page.waitForTimeout(3000);
 
+    const challenge = await detectChallenge(page);
+    if (challenge) {
+      return {
+        ok: false,
+        status: 'needs_session_refresh',
+        finalUrl: page.url(),
+        scannedAt: new Date().toISOString(),
+        items: [],
+        error: 'SHEIN showed a verification or CAPTCHA page. Refresh the persistent SHEIN session, then retry.',
+        challenge,
+      };
+    }
+
     const domItems = await extractDomItems(page);
     const jsonItems = extractItemsFromJson(jsonPayloads);
     const items = jsonItems.length ? addDomPlatforms(jsonItems, domItems) : domItems;
@@ -321,20 +462,57 @@ export async function scanSheinCart(targetUrl) {
       items,
     };
   } finally {
-    await browser.close();
+    await context.close();
   }
+  });
 }
 
 export async function scanSheinCartUrl(url) {
   const targetUrl = normalizeShareJumpUrl(validateSheinUrl(url));
+  const cacheKey = cacheKeyFromUrl(targetUrl);
+  const cached = await readCachedResult(cacheKey);
+
+  if (cached) return cached;
+
+  await throttleScan(cacheKey);
   const result = await scanSheinCart(targetUrl);
 
   if (!result.ok) {
     return {
       ...result,
-      error: 'The link opened, but no shared cart product could be read.',
+      error: result.error || 'The link opened, but no shared cart product could be read.',
     };
   }
 
+  await writeCachedResult(cacheKey, result);
   return result;
+}
+
+export async function openSheinSession(options = {}) {
+  const country = String(options.country || 'ES').toUpperCase();
+  const countryPath = country.toLowerCase();
+  const targetUrl = options.url || `https://m.shein.com/${countryPath}/`;
+  const normalizedUrl = normalizeShareJumpUrl(validateSheinUrl(targetUrl));
+  const { context, region } = await createSheinContext(normalizedUrl, {
+    headless: Boolean(options.headless),
+    remoteDebuggingPort: options.remoteDebuggingPort,
+  });
+
+  const page = await context.newPage();
+  await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+
+  console.log(`SHEIN ${region.country} session is open.`);
+  console.log(`Profile: ${profileDirForRegion(region)}`);
+  console.log(`URL: ${page.url()}`);
+  if (options.remoteDebuggingPort) {
+    console.log(`Remote debugging: http://127.0.0.1:${options.remoteDebuggingPort}`);
+  }
+  console.log('Leave this process running while you solve verification. Press Ctrl+C when done.');
+
+  await new Promise((resolve) => {
+    process.once('SIGINT', resolve);
+    process.once('SIGTERM', resolve);
+  });
+
+  await context.close();
 }

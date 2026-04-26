@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "shein:mobile": "node scripts/open-shein-mobile.mjs",
-    "shein:extract": "node scripts/extract-shein-cart.mjs"
+    "shein:extract": "node scripts/extract-shein-cart.mjs",
+    "shein:session": "node scripts/start-shein-session.mjs"
   },
   "dependencies": {
     "firebase": "^12.12.1",

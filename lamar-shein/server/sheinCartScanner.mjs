@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import net from 'node:net';
 import path from 'node:path';
 import { chromium, devices } from 'playwright';
 
@@ -183,9 +184,36 @@ async function waitForDebugEndpoint(port) {
   return false;
 }
 
+function createTcpBridge({ listenPort, targetPort }) {
+  const server = net.createServer((client) => {
+    const upstream = net.connect(targetPort, '127.0.0.1');
+
+    client.pipe(upstream);
+    upstream.pipe(client);
+
+    const close = () => {
+      client.destroy();
+      upstream.destroy();
+    };
+
+    client.on('error', close);
+    upstream.on('error', close);
+  });
+
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(listenPort, '0.0.0.0', () => {
+      server.off('error', reject);
+      resolve(server);
+    });
+  });
+}
+
 async function openDirectDebugSession(targetUrl, region, options = {}) {
   const device = devices[DEVICE_NAME];
   const profileDir = profileDirForRegion(region);
+  const externalPort = Number(options.remoteDebuggingPort);
+  const chromeDebugPort = externalPort + 1;
   await mkdir(profileDir, { recursive: true });
 
   const executablePath = chromium.executablePath();
@@ -197,8 +225,8 @@ async function openDirectDebugSession(targetUrl, region, options = {}) {
     '--no-first-run',
     '--no-default-browser-check',
     `--user-data-dir=${profileDir}`,
-    '--remote-debugging-address=0.0.0.0',
-    `--remote-debugging-port=${options.remoteDebuggingPort}`,
+    '--remote-debugging-address=127.0.0.1',
+    `--remote-debugging-port=${chromeDebugPort}`,
     `--user-agent=${device.userAgent}`,
     `--window-size=${viewport.width},${viewport.height}`,
     '--force-device-scale-factor=3',
@@ -223,22 +251,31 @@ async function openDirectDebugSession(targetUrl, region, options = {}) {
     }
   });
 
-  const ready = await waitForDebugEndpoint(options.remoteDebuggingPort);
+  const bridge = await createTcpBridge({
+    listenPort: externalPort,
+    targetPort: chromeDebugPort,
+  });
+  const ready = await waitForDebugEndpoint(externalPort);
 
   console.log(`SHEIN ${region.country} debug session is ${ready ? 'ready' : 'starting slowly'}.`);
   console.log(`Profile: ${profileDir}`);
   console.log(`URL: ${targetUrl}`);
-  console.log(`DevTools list: http://127.0.0.1:${options.remoteDebuggingPort}/json/list`);
+  console.log(`DevTools bridge: 0.0.0.0:${externalPort} -> 127.0.0.1:${chromeDebugPort}`);
+  console.log(`DevTools list: http://127.0.0.1:${externalPort}/json/list`);
   console.log('Leave this process running while you solve verification. Press Ctrl+C when done.');
 
   await new Promise((resolve) => {
     const stop = () => {
+      bridge.close();
       child.kill('SIGTERM');
       resolve();
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
-    child.once('exit', resolve);
+    child.once('exit', () => {
+      bridge.close();
+      resolve();
+    });
   });
 }
 

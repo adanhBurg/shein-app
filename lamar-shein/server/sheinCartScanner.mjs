@@ -227,6 +227,7 @@ async function openDirectDebugSession(targetUrl, region, options = {}) {
     `--user-data-dir=${profileDir}`,
     '--remote-debugging-address=127.0.0.1',
     `--remote-debugging-port=${chromeDebugPort}`,
+    '--remote-allow-origins=https://chrome-devtools-frontend.appspot.com,http://127.0.0.1:9222',
     `--user-agent=${device.userAgent}`,
     `--window-size=${viewport.width},${viewport.height}`,
     '--force-device-scale-factor=3',

@@ -104,6 +104,7 @@ service cloud.firestore {
           "submittedByName",
           "pricing",
           "images",
+          "sheinCart",
           "orderNumber",
           "orderSequence",
           "orderPrefix"
@@ -124,6 +125,12 @@ service cloud.firestore {
         && request.resource.data.pricing.items is list
         && request.resource.data.images is list
         && request.resource.data.images.size() == 0
+        && (!("sheinCart" in request.resource.data) || (
+          request.resource.data.sheinCart is map
+          && request.resource.data.sheinCart.status in ["success", "error", "skipped"]
+          && request.resource.data.sheinCart.items is list
+          && request.resource.data.sheinCart.items.size() <= 20
+        ))
         && isValidOrderPrefix(request.resource.data.orderPrefix)
         && isNextOrderSequence(request.resource.data.orderSequence)
         && request.resource.data.orderNumber.matches("^[A-Z0-9]{3}-[0-9]{5,}$");

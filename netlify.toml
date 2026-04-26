@@ -3,6 +3,15 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/shein-cart-preview"
+  to = "/.netlify/functions/shein-cart-preview"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

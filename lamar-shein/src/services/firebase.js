@@ -101,8 +101,53 @@ function normalizePricingItems(value) {
   }));
 }
 
+function normalizeSheinCart(value) {
+  if (!value || typeof value !== 'object') return null;
+
+  const items = Array.isArray(value.items)
+    ? value.items.slice(0, 20).map((item) => ({
+      name: String(item?.name || '').trim().slice(0, 500),
+      price: Number.isFinite(Number(item?.price)) ? Number(item.price) : null,
+      priceText: String(item?.priceText || '').trim().slice(0, 80),
+      currency: String(item?.currency || '').trim().slice(0, 12),
+      platform: normalizePlatform(item?.platform) || 'shein',
+      choices: Array.isArray(item?.choices)
+        ? item.choices.map((choice) => String(choice || '').trim().slice(0, 120)).filter(Boolean).slice(0, 8)
+        : [],
+      sourceUrl: String(item?.sourceUrl || '').trim().slice(0, 1000),
+    })).filter((item) => item.name)
+    : [];
+
+  return {
+    status: value.status === 'error' ? 'error' : value.status === 'skipped' ? 'skipped' : 'success',
+    finalUrl: String(value.finalUrl || '').trim().slice(0, 1000),
+    scannedAt: typeof value.scannedAt === 'string' ? value.scannedAt : new Date().toISOString(),
+    error: String(value.error || '').trim().slice(0, 500),
+    items,
+  };
+}
+
 function normalizeStatus(status) {
   return status === 'done' ? 'done' : 'pending';
+}
+
+function buildPricingFromSheinCart(sheinCart) {
+  const items = Array.isArray(sheinCart?.items) ? sheinCart.items : [];
+  const sums = items.reduce((current, item) => {
+    const price = Number(item?.price);
+    if (!Number.isFinite(price) || price <= 0) return current;
+    const platform = item?.platform === 'marketplace' ? 'marketplace' : 'shein';
+    return { ...current, [platform]: current[platform] + price };
+  }, { shein: 0, marketplace: 0 });
+
+  return {
+    items: [
+      { platform: 'shein', price: sums.shein > 0 ? String(Number(sums.shein.toFixed(2))) : '' },
+      { platform: 'sheinPlus', price: '' },
+      { platform: 'marketplace', price: sums.marketplace > 0 ? String(Number(sums.marketplace.toFixed(2))) : '' },
+      { platform: 'marketplacePlus', price: '' },
+    ],
+  };
 }
 
 export function buildOrderPrefix(storeSlug) {
@@ -125,6 +170,9 @@ function serializeOrder(order) {
     pricing: { items: normalizePricingItems(order.pricing?.items) },
     images: Array.isArray(order.images) ? order.images.filter((image) => typeof image === 'string') : [],
   };
+
+  const sheinCart = normalizeSheinCart(order.sheinCart);
+  if (sheinCart) serialized.sheinCart = sheinCart;
 
   if (order.orderNumber) serialized.orderNumber = String(order.orderNumber).trim().toUpperCase();
   if (Number.isFinite(Number(order.orderSequence))) serialized.orderSequence = Number(order.orderSequence);
@@ -151,6 +199,7 @@ function mapOrderDoc(snapshot) {
     submittedByName: typeof data.submittedByName === 'string' ? data.submittedByName : '',
     pricing: { items: normalizePricingItems(data.pricing?.items) },
     images: Array.isArray(data.images) ? data.images.filter((image) => typeof image === 'string') : [],
+    sheinCart: normalizeSheinCart(data.sheinCart),
   };
 }
 
@@ -218,14 +267,16 @@ export async function createOrder(storeSlug, input) {
   const normalizedLink = String(input.link || '').match(/^https?:\/\//i)
     ? String(input.link || '').trim()
     : `https://${String(input.link || '').trim()}`;
+  const sheinCart = normalizeSheinCart(input.sheinCart);
   const order = serializeOrder({
     name: input.name,
     phone: input.phone,
     link: normalizedLink,
     submittedByName: input.submittedByName,
+    sheinCart,
     status: 'pending',
     time: new Date().toISOString(),
-    pricing: { items: [] },
+    pricing: input.pricing || buildPricingFromSheinCart(sheinCart),
     images: [],
   });
 

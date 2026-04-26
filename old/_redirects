@@ -1,6 +1,0 @@
-/owner /owner.html 200
-/super-admin /super-admin.html 200
-/:store/admin /admin.html 200
-/:store/orders /shein-order.html 200
-/store/:store/admin /admin.html 200
-/store/:store/orders /shein-order.html 200

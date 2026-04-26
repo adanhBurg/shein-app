@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext.jsx';
 import { useLang } from '../i18n.js';
-import { PLATFORMS, calcPrice, calcTotal, defaultPricingItems, normalizePhone } from '../utils/pricing.js';
+import { PLATFORMS, calcPrice, calcTotal, defaultPricingItems, normalizePhone, parsePrice } from '../utils/pricing.js';
 import LanguageSwitcher from '../components/LanguageSwitcher.jsx';
 import logoImg from '../assets/logo.jpeg';
 import {
@@ -24,6 +24,82 @@ function formatTime(iso, lang) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleString(lang === 'ar' ? 'ar-MA' : lang === 'fr' ? 'fr-FR' : 'en-GB');
+}
+
+function detectCurrencyText(value) {
+  const text = String(value || '').toUpperCase();
+  if (text.includes('€') || /\bEUR\b/.test(text)) return 'EUR';
+  if (/MAD|DHS?|د\.?م/.test(text)) return 'MAD';
+  if (text.includes('$') || /\bUSD\b/.test(text)) return 'USD';
+  return '';
+}
+
+function parseCartPriceText(value) {
+  const match = String(value || '').match(/[0-9]+(?:[.,\s][0-9]{3})*(?:[.,][0-9]{1,2})?|[0-9]+/);
+  if (!match) return null;
+  const parsed = Number(match[0].replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeCurrencyCode(value) {
+  const code = String(value || '').trim().toUpperCase();
+  return ['EUR', 'MAD', 'USD', 'GBP'].includes(code) ? code : 'EUR';
+}
+
+function formatMoney(value, currency = 'EUR') {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '';
+  const hasDecimals = Math.abs(amount - Math.round(amount)) > 0.001;
+  return `${amount.toLocaleString('fr-FR', {
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+    maximumFractionDigits: 2,
+  })} ${normalizeCurrencyCode(currency)}`;
+}
+
+function formatCartPrice(item, currencyOverride = '') {
+  if (!item) return '';
+  if (item.priceText) {
+    const textCurrency = detectCurrencyText(item.priceText);
+    const parsed = parseCartPriceText(item.priceText);
+    if (parsed !== null) return formatMoney(parsed, currencyOverride || textCurrency || item.currency || 'EUR');
+    return item.priceText;
+  }
+  if (Number.isFinite(Number(item.price))) return formatMoney(item.price, currencyOverride || item.currency || 'EUR');
+  return '';
+}
+
+function sumCartPrices(items = []) {
+  return items.reduce((sum, item) => {
+    const price = Number(item?.price);
+    return Number.isFinite(price) ? sum + price : sum;
+  }, 0);
+}
+
+function currencyFromUrl(value) {
+  const text = String(value || '').toLowerCase();
+  if (/\/es\/|[?&]localcountry=es\b|[?&]local_country=es\b|[?&]country=es\b/.test(text)) return 'EUR';
+  if (/\/ma\/|[?&]localcountry=ma\b|[?&]local_country=ma\b|[?&]country=ma\b/.test(text)) return 'MAD';
+  return '';
+}
+
+function inferCartCurrency(order) {
+  const fromUrl = currencyFromUrl(order.link) || currencyFromUrl(order.sheinCart?.finalUrl);
+  if (fromUrl) return fromUrl;
+
+  const items = order.sheinCart?.items || [];
+  const fromText = items.find((item) => /€|EUR/i.test(item.priceText || ''));
+  if (fromText) return 'EUR';
+
+  return items.find((item) => item.currency)?.currency || 'EUR';
+}
+
+function formatCartTotal(value, currency = 'EUR') {
+  return formatMoney(value, currency);
+}
+
+function formatPricingCost(value, currency = 'EUR') {
+  const cost = parsePrice(value);
+  return cost === null ? '' : formatMoney(cost, currency);
 }
 
 function loadScript(src, globalName) {
@@ -65,6 +141,7 @@ export default function AdminDashboard() {
   const [toast, setToast] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState('');
+  const [orderItemsExpanded, setOrderItemsExpanded] = useState(true);
   const [orderSearch, setOrderSearch] = useState('');
   const [adminScale, setAdminScale] = useState(() => {
     const saved = Number(localStorage.getItem('lamar_admin_scale'));
@@ -136,6 +213,10 @@ export default function AdminDashboard() {
     const fresh = orders.find((order) => order.id === selectedOrder.id);
     if (fresh) setSelectedOrder(fresh);
   }, [orders, selectedOrder?.id]);
+
+  useEffect(() => {
+    if (selectedOrder?.id) setOrderItemsExpanded(true);
+  }, [selectedOrder?.id]);
 
   const pending = orders.filter((o) => o.status === 'pending');
   const done = orders.filter((o) => o.status === 'done');
@@ -435,17 +516,26 @@ export default function AdminDashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: sz(8) }}>
             {visibleOrders.map((order) => {
               const total = calcTotal(order.pricing?.items);
+              const cartTotal = sumCartPrices(order.sheinCart?.items);
+              const cartCurrency = inferCartCurrency(order);
               return (
-                <div key={order.id} onClick={() => { setSelectedOrder(order); setView('detail'); }} style={{ ...card, cursor: 'pointer', borderRight: `${sz(4)}px solid ${order.status === 'done' ? '#4caf50' : T.accent}`, direction: 'ltr' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: sz(12), marginBottom: sz(6) }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: sz(5), alignItems: 'flex-start', flexShrink: 0 }}>
-                      <span style={badge(order.status)}>{statusLabel(order.status, t)}</span>
-                      {order.orderNumber && <span style={{ fontSize: sz(10), fontWeight: 800, color: T.accent, background: T.accentLight, borderRadius: sz(8), padding: `${sz(3)}px ${sz(7)}px`, direction: 'ltr' }}>{order.orderNumber}</span>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0, textAlign: 'right', direction: t.dir }}><div style={{ fontWeight: 700, color: T.text, fontSize: sz(13) }}>{order.name}</div><div style={{ color: T.textMuted, fontSize: sz(10) }}>{formatTime(order.time, lang)}</div></div>
+                <div key={order.id} onClick={() => { setSelectedOrder(order); setView('detail'); }} style={{ ...card, padding: `${sz(10)}px ${sz(11)}px`, cursor: 'pointer', borderRight: `${sz(4)}px solid ${order.status === 'done' ? '#4caf50' : T.accent}`, direction: 'ltr' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: sz(8), marginBottom: sz(7) }}>
+                    <span style={badge(order.status)}>{statusLabel(order.status, t)}</span>
+                    {order.orderNumber && <span style={{ fontSize: sz(10), fontWeight: 900, color: T.accent, background: T.accentLight, borderRadius: sz(8), padding: `${sz(3)}px ${sz(7)}px`, direction: 'ltr' }}>{order.orderNumber}</span>}
+                  </div>
+                  <div style={{ textAlign: 'right', direction: t.dir, marginBottom: sz(4) }}>
+                    <div style={{ fontWeight: 800, color: T.text, fontSize: sz(13), lineHeight: 1.35 }}>{order.name}</div>
+                    <div style={{ color: T.textMuted, fontSize: sz(10), marginTop: sz(2) }}>{formatTime(order.time, lang)}</div>
                   </div>
                   <div style={{ color: T.textMuted, fontSize: sz(10), direction: 'ltr', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.link}</div>
-                  {total > 0 && <div style={{ textAlign: 'left', fontSize: sz(11), fontWeight: 700, color: T.gold, marginTop: sz(4) }}>${total.toFixed(2)}</div>}
+                  {!!order.sheinCart?.items?.length && (
+                    <div style={{ marginTop: sz(6), color: T.text, fontSize: sz(10), fontWeight: 700, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {order.sheinCart.items[0].name} · {formatCartPrice(order.sheinCart.items[0], cartCurrency)}
+                    </div>
+                  )}
+                  {cartTotal > 0 && <div style={{ textAlign: 'left', fontSize: sz(10), fontWeight: 800, color: T.gold, marginTop: sz(4), direction: 'ltr' }}>{formatCartTotal(cartTotal, cartCurrency)}</div>}
+                  {total > 0 && <div style={{ textAlign: 'left', fontSize: sz(11), fontWeight: 700, color: T.gold, marginTop: sz(4), direction: 'ltr' }}>{formatMoney(total, cartCurrency)}</div>}
                 </div>
               );
             })}
@@ -461,20 +551,56 @@ export default function AdminDashboard() {
     const items = order.pricing?.items?.length ? order.pricing.items : defaultPricingItems();
     const updatePrice = (key, val) => queueSave({ ...order, pricing: { items: items.map((it) => (it.platform === key ? { ...it, price: val.replace(/\s/g, '').replace(/\++$/, '+') } : it)) } });
     const totalCalc = calcTotal(items);
+    const cartTotal = sumCartPrices(order.sheinCart?.items);
+    const cartCurrency = inferCartCurrency(order);
     return (
       <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: 'Tajawal, sans-serif', direction: t.dir }}>
         {topbar(t.orderDetails, [topBtn(t.invoice, () => setView('invoice')), topBtn(order.status === 'pending' ? t.markDone : t.markPending, () => toggleStatus(order))], [topBtn(t.back, () => setView('dashboard'))])}
         <div style={{ flex: 1, overflowY: 'auto', padding: `${sz(12)}px ${sz(14)}px`, display: 'flex', flexDirection: 'column', gap: sz(10) }}>
-          <div style={card}>
-            {order.orderNumber && <div style={{ display: 'inline-flex', color: T.accent, background: T.accentLight, fontWeight: 900, fontSize: sz(12), borderRadius: sz(10), padding: `${sz(5)}px ${sz(9)}px`, direction: 'ltr', marginBottom: sz(8) }}>{order.orderNumber}</div>}
-            <div style={{ fontWeight: 800, color: T.text, fontSize: sz(15) }}>{order.name}</div>
-            <div style={{ color: T.textMuted, fontSize: sz(11), direction: 'ltr' }}>{order.phone}</div>
-            <div style={{ marginTop: sz(4) }}><span style={badge(order.status)}>{statusLabel(order.status, t)}</span></div>
+          <div style={{ ...card, padding: sz(12) }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: sz(8), marginBottom: sz(8) }}>
+              <span style={badge(order.status)}>{statusLabel(order.status, t)}</span>
+              {order.orderNumber && <div style={{ display: 'inline-flex', color: T.accent, background: T.accentLight, fontWeight: 900, fontSize: sz(12), borderRadius: sz(10), padding: `${sz(5)}px ${sz(9)}px`, direction: 'ltr' }}>{order.orderNumber}</div>}
+            </div>
+            <div style={{ fontWeight: 800, color: T.text, fontSize: sz(15), textAlign: t.dir === 'rtl' ? 'right' : 'left' }}>{order.name}</div>
+            <div style={{ color: T.textMuted, fontSize: sz(11), direction: 'ltr', textAlign: t.dir === 'rtl' ? 'right' : 'left', marginTop: sz(3) }}>{order.phone}</div>
           </div>
           <div style={card}>
             <div style={{ fontSize: sz(11), color: T.textMuted, marginBottom: sz(5) }}>{t.productLink}</div>
-            <a href={order.link} target="_blank" rel="noopener noreferrer" style={{ color: T.accent, fontSize: sz(11), direction: 'ltr', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: 'none' }}>{order.link}</a>
+            <div style={{ display: 'flex', gap: sz(8), alignItems: 'center' }}>
+              <div style={{ flex: 1, minWidth: 0, color: T.accent, fontSize: sz(11), direction: 'ltr', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.link}</div>
+              <button onClick={() => window.open(order.link, '_blank', 'noopener,noreferrer')} style={{ border: 'none', borderRadius: sz(9), padding: `${sz(7)}px ${sz(10)}px`, background: T.accentLight, color: T.accent, fontSize: sz(11), fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}>{t.openShein}</button>
+            </div>
           </div>
+          {!!order.sheinCart?.items?.length && (
+            <div style={card}>
+              <button onClick={() => setOrderItemsExpanded((current) => !current)} style={{ width: '100%', border: 'none', background: 'transparent', padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: sz(10), cursor: 'pointer', fontFamily: 'Tajawal, sans-serif' }}>
+                <div style={{ color: T.gold, fontSize: sz(12), fontWeight: 900, direction: 'ltr', textAlign: 'left' }}>
+                  {cartTotal > 0 ? formatCartTotal(cartTotal, cartCurrency) : formatCartPrice(order.sheinCart.items[0], cartCurrency)}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: sz(8) }}>
+                  <span style={{ color: T.textMuted, fontSize: sz(11), fontWeight: 900 }}>{orderItemsExpanded ? '-' : '+'}</span>
+                  <span style={{ fontSize: sz(13), fontWeight: 800, color: T.text }}>{t.orderItems}</span>
+                </div>
+              </button>
+              {orderItemsExpanded && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: sz(8), marginTop: sz(10) }}>
+                  {order.sheinCart.items.map((item, idx) => (
+                    <div key={`${item.name}-${idx}`} style={{ background: T.bg, borderRadius: sz(10), padding: sz(10) }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', marginBottom: sz(6), borderRadius: sz(6), padding: `${sz(2)}px ${sz(6)}px`, background: item.platform === 'marketplace' ? '#111' : T.accentLight, color: item.platform === 'marketplace' ? '#fff' : T.accent, fontSize: sz(9), fontWeight: 900 }}>
+                        {item.platform === 'marketplace' ? 'Marketplace' : 'SHEIN'}
+                      </div>
+                      <div style={{ color: T.text, fontSize: sz(12), fontWeight: 800, lineHeight: 1.5, textAlign: 'right' }}>{item.name}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: sz(8), marginTop: sz(6), direction: 'ltr' }}>
+                        <span style={{ color: T.textMuted, fontSize: sz(11), overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.choices?.join(' / ')}</span>
+                        <span style={{ color: T.gold, fontSize: sz(12), fontWeight: 900, flexShrink: 0 }}>{formatCartPrice(item, cartCurrency)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: sz(10) }}>
               <div style={{ display: 'flex', gap: sz(6) }}>
@@ -507,13 +633,13 @@ export default function AdminDashboard() {
                     <div style={{ flex: 1, background: T.bg, borderRadius: sz(10), padding: `${sz(7)}px ${sz(10)}px`, direction: 'ltr' }}>
                       <input value={item.price} onChange={(e) => updatePrice(p.key, e.target.value)} placeholder="0.00" style={{ background: 'none', border: 'none', outline: 'none', width: '100%', fontSize: sz(13), color: T.text, fontFamily: 'monospace' }} />
                     </div>
-                    {calc !== null && <div style={{ fontSize: sz(11), fontWeight: 700, color: T.gold, minWidth: sz(50), textAlign: 'center' }}>${calc.toFixed(2)}</div>}
+                    {calc !== null && <div style={{ fontSize: sz(11), fontWeight: 700, color: T.gold, minWidth: sz(70), textAlign: 'center', direction: 'ltr' }}>{formatMoney(calc, cartCurrency)}</div>}
                     <div style={{ background: T.accentLight, color: T.accent, borderRadius: sz(8), padding: `${sz(4)}px ${sz(8)}px`, fontSize: sz(9), fontWeight: 700, minWidth: sz(72), textAlign: 'center', flexShrink: 0 }}>{p.label}</div>
                   </div>
                 );
               })}
             </div>
-            {totalCalc > 0 && <div style={{ marginTop: sz(12), paddingTop: sz(10), borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}><div style={{ fontSize: sz(15), fontWeight: 800, color: T.gold }}>${totalCalc.toFixed(2)}</div><div style={{ fontSize: sz(12), color: T.textMuted }}>{t.total2}</div></div>}
+            {totalCalc > 0 && <div style={{ marginTop: sz(12), paddingTop: sz(10), borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}><div style={{ fontSize: sz(15), fontWeight: 800, color: T.gold, direction: 'ltr' }}>{formatMoney(totalCalc, cartCurrency)}</div><div style={{ fontSize: sz(12), color: T.textMuted }}>{t.total2}</div></div>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: sz(8) }}>
             <button onClick={() => setView('invoice')} style={{ padding: sz(11), borderRadius: sz(11), border: 'none', background: T.gold, color: '#fff', fontSize: sz(12), fontWeight: 700, cursor: 'pointer' }}>{t.invoice}</button>
@@ -528,6 +654,7 @@ export default function AdminDashboard() {
     const order = selectedOrder;
     const items = order.pricing?.items || [];
     const total = calcTotal(items);
+    const cartCurrency = inferCartCurrency(order);
     const hasPrice = items.some((item) => calcPrice(item.platform, item.price) !== null);
     const openWhatsApp = () => window.open(`https://wa.me/${normalizePhone(order.phone)}`, '_blank');
     return (
@@ -559,12 +686,12 @@ export default function AdminDashboard() {
                     const item = items.find((it) => it.platform === p.key);
                     const sell = calcPrice(p.key, item?.price);
                     if (!sell) return null;
-                    return <tr key={p.key} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(13), fontWeight: 700, color: T.gold, textAlign: 'left' }}>${sell.toFixed(2)}</td><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(12), color: T.text, textAlign: 'center' }}>€{item?.price}</td><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(12), color: T.text, textAlign: 'right' }}>{p.label}</td></tr>;
+                    return <tr key={p.key} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(13), fontWeight: 700, color: T.gold, textAlign: 'left', direction: 'ltr' }}>{formatMoney(sell, cartCurrency)}</td><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(12), color: T.text, textAlign: 'center', direction: 'ltr' }}>{formatPricingCost(item?.price, cartCurrency)}</td><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(12), color: T.text, textAlign: 'right' }}>{p.label}</td></tr>;
                   }) : <tr><td colSpan={3} style={{ textAlign: 'center', padding: sz(18), color: T.textMuted, fontSize: sz(12) }}>{t.noPrice}</td></tr>}
                 </tbody>
               </table>
             </div>
-            {hasPrice && <div style={{ margin: `0 ${sz(18)}px`, padding: `${sz(12)}px 0`, borderTop: `2px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}><div style={{ fontSize: sz(17), fontWeight: 800, color: T.gold }}>${total.toFixed(2)}</div><div style={{ fontSize: sz(13), fontWeight: 700, color: T.text }}>{t.total2}</div></div>}
+            {hasPrice && <div style={{ margin: `0 ${sz(18)}px`, padding: `${sz(12)}px 0`, borderTop: `2px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}><div style={{ fontSize: sz(17), fontWeight: 800, color: T.gold, direction: 'ltr' }}>{formatMoney(total, cartCurrency)}</div><div style={{ fontSize: sz(13), fontWeight: 700, color: T.text }}>{t.total2}</div></div>}
             <div style={{ background: `linear-gradient(135deg, ${T.accent}18, ${T.accentLight})`, padding: `${sz(14)}px ${sz(18)}px`, textAlign: 'center' }}>
               <div style={{ fontSize: sz(13), fontWeight: 700, color: T.accent }}>{t.thankYou}</div>
               <div style={{ fontSize: sz(10), color: T.textMuted, marginTop: sz(3) }}>SHEIN By_Fadwa_Hn · Lamar</div>

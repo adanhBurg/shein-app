@@ -5,6 +5,7 @@ import { useLang } from '../i18n.js';
 import LanguageSwitcher from '../components/LanguageSwitcher.jsx';
 import logoImg from '../assets/logo.jpeg';
 import { createOrder, getStore, isValidStoreSlug, resolveRouteStoreSlug } from '../services/firebase.js';
+import { scanSheinCartLink } from '../services/sheinCart.js';
 
 function loadScript(src, globalName) {
   if (globalName && window[globalName]) return Promise.resolve(window[globalName]);
@@ -51,6 +52,7 @@ export default function CustomerOrderPage() {
   });
   const [order, setOrder] = useState({ name: '', link: '' });
   const [sending, setSending] = useState(false);
+  const [submitStage, setSubmitStage] = useState('idle');
   const [sent, setSent] = useState(false);
   const [createdOrderNumber, setCreatedOrderNumber] = useState('');
   const [createdOrder, setCreatedOrder] = useState(null);
@@ -124,21 +126,42 @@ export default function CustomerOrderPage() {
 
     setErrors({});
     setSending(true);
+    setSubmitStage('scanning');
 
     try {
+      const submittedLink = String(order.link || '').match(/^https?:\/\//i)
+        ? order.link.trim()
+        : `https://${order.link.trim()}`;
+      let sheinCart = null;
+      try {
+        sheinCart = await scanSheinCartLink(submittedLink);
+      } catch (scanError) {
+        sheinCart = {
+          status: 'error',
+          finalUrl: '',
+          scannedAt: new Date().toISOString(),
+          error: scanError?.message || String(scanError),
+          items: [],
+        };
+      }
+
+      setSubmitStage('saving');
       const created = await createOrder(store, {
         name: order.name.trim(),
         phone: profile.phone,
-        link: order.link,
+        link: submittedLink,
         submittedByName: profile.name,
+        sheinCart,
       });
 
       setSending(false);
+      setSubmitStage('idle');
       setCreatedOrderNumber(created.orderNumber || '');
       setCreatedOrder(created);
       setSent(true);
     } catch (error) {
       setSending(false);
+      setSubmitStage('idle');
       alert(`تعذر إرسال الطلب لمتجر "${store}". ${error?.code || ''} ${error?.message || error}`);
     }
   };
@@ -274,7 +297,7 @@ export default function CustomerOrderPage() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {[].map(([label, value]) => (
+              {confirmationRows.map(([label, value]) => (
                 <div key={label} style={{ background: T.bg, borderRadius: 11, padding: '10px 12px' }}>
                   <div style={{ color: T.textMuted, fontSize: 10, marginBottom: 4, textAlign: isRTL ? 'right' : 'left' }}>{label}</div>
                   <div style={{ color: T.text, fontSize: label === 'رابط المنتج' ? 11 : 13, fontWeight: 700, direction: label === 'رابط المنتج' || label === 'الهاتف' ? 'ltr' : t.dir, textAlign: label === 'رابط المنتج' || label === 'الهاتف' ? 'left' : (isRTL ? 'right' : 'left'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: label === 'رابط المنتج' ? 'nowrap' : 'normal' }}>
@@ -384,8 +407,19 @@ export default function CustomerOrderPage() {
           <span style={{ width: 22, height: 22, borderRadius: '50%', background: T.card, color: T.accent, fontSize: 13, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</span>
           <p style={{ margin: 0, fontSize: 11, color: T.textMuted, textAlign: isRTL ? 'right' : 'left', lineHeight: 1.5 }}>{t.hint}</p>
         </div>
+        {submitStage !== 'idle' && (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '12px 14px', boxShadow: `0 2px 10px ${T.shadow}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ color: T.textMuted, fontSize: 11, fontWeight: 700 }}>{submitStage === 'scanning' ? t.scanningCart : t.savingOrder}</span>
+              <span style={{ color: T.accent, fontSize: 11, fontWeight: 800 }}>{submitStage === 'scanning' ? '1/2' : '2/2'}</span>
+            </div>
+            <div style={{ height: 6, background: T.bg, borderRadius: 999, overflow: 'hidden' }}>
+              <div style={{ width: submitStage === 'scanning' ? '55%' : '88%', height: '100%', background: `linear-gradient(135deg, ${T.accent}, ${T.accentDark})`, borderRadius: 999, transition: 'width 0.25s ease' }} />
+            </div>
+          </div>
+        )}
         <button onClick={handleSubmit} disabled={sending || sent} style={{ width: '100%', padding: '15px', borderRadius: 14, border: 'none', background: sent ? '#4caf50' : `linear-gradient(135deg, ${T.accent}, ${T.accentDark})`, color: '#fff', fontSize: 15, fontWeight: 700, cursor: sending || sent ? 'default' : 'pointer', boxShadow: `0 4px 16px ${sent ? '#4caf5055' : T.accent + '55'}`, transition: 'background 0.4s' }}>
-          {sending ? t.sending : sent ? t.sentBtn : t.submitBtn}
+          {submitStage === 'scanning' ? t.scanningCart : submitStage === 'saving' ? t.savingOrder : sent ? t.sentBtn : t.submitBtn}
         </button>
       </div>
       <Steps active={1} />

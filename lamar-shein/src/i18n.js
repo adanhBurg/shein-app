@@ -61,6 +61,7 @@ export const I18N = {
     displaySize: 'حجم العرض',
     decreaseSize: 'تصغير',
     increaseSize: 'تكبير',
+    save: 'حفظ',
   },
   fr: {
     dir: 'ltr', lang: 'fr',
@@ -122,6 +123,7 @@ export const I18N = {
     displaySize: "Taille d'affichage",
     decreaseSize: 'Réduire',
     increaseSize: 'Agrandir',
+    save: 'Enregistrer',
   },
   en: {
     dir: 'ltr', lang: 'en',
@@ -183,6 +185,7 @@ export const I18N = {
     displaySize: 'Display size',
     decreaseSize: 'Decrease',
     increaseSize: 'Increase',
+    save: 'Save',
   },
 };
 

@@ -18,6 +18,7 @@ import {
   signInWithGoogle,
   signOutGoogle,
   subscribeToOrders,
+  updateStore,
 } from '../services/firebase.js';
 
 function formatTime(iso, lang) {
@@ -141,6 +142,11 @@ export default function AdminDashboard() {
   const [toast, setToast] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState('');
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editPhotoData, setEditPhotoData] = useState('');
+  const [cachedPhoto, setCachedPhoto] = useState(() => localStorage.getItem(`lamar_store_photo_${store}`) || '');
+  const [activeKey, setActiveKey] = useState(null);
   const [orderItemsExpanded, setOrderItemsExpanded] = useState(true);
   const [orderSearch, setOrderSearch] = useState('');
   const [adminScale, setAdminScale] = useState(() => {
@@ -410,8 +416,85 @@ export default function AdminDashboard() {
             <div style={{ color: T.text, fontWeight: 900, fontSize: sz(14) }}>{ownerStore?.displayName || store}</div>
             <div style={{ color: T.textMuted, fontSize: sz(10), direction: 'ltr', textAlign: 'right' }}>/{store}</div>
           </div>
-          <img src={logoImg} alt="" style={{ width: sz(38), height: sz(38), borderRadius: '50%', objectFit: 'cover', border: `2px solid ${T.accentLight}` }} />
+          <div style={{ position: 'relative' }}>
+            {(ownerStore?.photoURL || cachedPhoto)
+              ? <img src={ownerStore?.photoURL || cachedPhoto} alt="" style={{ width: sz(38), height: sz(38), borderRadius: '50%', objectFit: 'cover', border: `2px solid ${T.accentLight}` }} />
+              : <div style={{ width: sz(38), height: sz(38), borderRadius: '50%', background: T.accentLight, border: `2px solid ${T.accentLight}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.accent, fontWeight: 800, fontSize: sz(16) }}>{(ownerStore?.displayName || store || '?')[0].toUpperCase()}</div>
+            }
+            <button
+              onClick={() => { setEditingProfile((v) => !v); setEditDisplayName(ownerStore?.displayName || store); setEditPhotoData(''); }}
+              style={{ position: 'absolute', bottom: -2, right: -2, width: sz(18), height: sz(18), borderRadius: '50%', background: T.accent, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+            >
+              <svg width={sz(10)} height={sz(10)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+          </div>
         </div>
+
+        {editingProfile && (
+          <div style={{ background: T.bg, borderRadius: sz(12), padding: sz(12), border: `1px solid ${T.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: sz(10) }}>
+              <label style={{ position: 'relative', cursor: 'pointer' }}>
+                {(editPhotoData || ownerStore?.photoURL || cachedPhoto)
+                  ? <img src={editPhotoData || ownerStore?.photoURL || cachedPhoto} alt="" style={{ width: sz(64), height: sz(64), borderRadius: '50%', objectFit: 'cover', border: `2px solid ${T.accent}` }} />
+                  : <div style={{ width: sz(64), height: sz(64), borderRadius: '50%', background: T.accentLight, border: `2px solid ${T.accent}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.accent, fontWeight: 800, fontSize: sz(26) }}>{(ownerStore?.displayName || store || '?')[0].toUpperCase()}</div>
+                }
+                <div style={{ position: 'absolute', bottom: 0, right: 0, width: sz(20), height: sz(20), borderRadius: '50%', background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width={sz(10)} height={sz(10)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </div>
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const img = new Image();
+                    img.onload = () => {
+                      const MAX = 256;
+                      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+                      const canvas = document.createElement('canvas');
+                      canvas.width = Math.round(img.width * scale);
+                      canvas.height = Math.round(img.height * scale);
+                      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                      setEditPhotoData(canvas.toDataURL('image/jpeg', 0.75));
+                    };
+                    img.src = ev.target.result;
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = '';
+                }} />
+              </label>
+            </div>
+            <input
+              value={editDisplayName}
+              onChange={(e) => setEditDisplayName(e.target.value)}
+              style={{ width: '100%', padding: `${sz(9)}px ${sz(10)}px`, borderRadius: sz(9), border: `1.5px solid ${T.border}`, background: T.card, color: T.text, fontSize: sz(13), fontFamily: 'Tajawal, sans-serif', outline: 'none', boxSizing: 'border-box', textAlign: 'right', direction: t.dir }}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: sz(8), marginTop: sz(8) }}>
+              <button onClick={() => setEditingProfile(false)} style={{ ...sidebarButton, fontSize: sz(11) }}>{t.back}</button>
+              <button
+                onClick={async () => {
+                  const updates = { displayName: editDisplayName.trim() || store };
+                  if (editPhotoData) updates.photoURL = editPhotoData;
+                  await updateStore(store, updates).catch((err) => setToast(err?.message || String(err)));
+                  if (updates.photoURL) {
+                    localStorage.setItem(`lamar_store_photo_${store}`, updates.photoURL);
+                    setCachedPhoto(updates.photoURL);
+                  }
+                  setOwnerStore((s) => ({ ...s, ...updates }));
+                  setEditingProfile(false);
+                }}
+                style={{ ...sidebarButton, background: `linear-gradient(135deg, ${T.accent}, ${T.accentDark})`, color: '#fff', border: 'none', fontSize: sz(11) }}
+              >
+                {t.save}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={{ height: 1, background: T.border }} />
 
@@ -475,7 +558,7 @@ export default function AdminDashboard() {
               <div style={{ color: T.accent, fontWeight: 800, fontSize: sz(14) }}>{orders.filter((x) => x.name.toLowerCase() === order.name.toLowerCase()).length}</div>
             </div>
           )) : list.map((order) => (
-            <div key={order.id} onClick={() => { setSelectedOrder(order); setView('detail'); setExpandedStat(null); }} style={{ ...card, cursor: 'pointer' }}>
+            <div key={order.id} onClick={() => { setSelectedOrder(order); setView('detail'); setExpandedStat(null); setActiveKey(null); }} style={{ ...card, cursor: 'pointer' }}>
               {order.orderNumber && <div style={{ color: T.accent, fontSize: sz(10), fontWeight: 800, direction: 'ltr', marginBottom: sz(4) }}>{order.orderNumber}</div>}
               <div style={{ fontWeight: 700, color: T.text, fontSize: sz(14) }}>{order.name}</div>
               <div style={{ fontSize: sz(11), color: T.textMuted }}>{formatTime(order.time, lang)}</div>
@@ -493,7 +576,10 @@ export default function AdminDashboard() {
         {topbar(
           <span>{ownerStore?.displayName || store}<br/><span style={{ fontSize: sz(10), color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>{t.dashboard}</span></span>,
           [topBtn(t.menu, () => setSidebarOpen(true))],
-          [<img key="logo" src={logoImg} alt="" style={{ width: sz(32), height: sz(32), borderRadius: '50%', objectFit: 'cover', border: `${sz(2)}px solid rgba(255,255,255,0.4)` }} />],
+          [(ownerStore?.photoURL || cachedPhoto)
+            ? <img key="logo" src={ownerStore?.photoURL || cachedPhoto} alt="" style={{ width: sz(32), height: sz(32), borderRadius: '50%', objectFit: 'cover', border: `${sz(2)}px solid rgba(255,255,255,0.4)` }} />
+            : <div key="logo" style={{ width: sz(32), height: sz(32), borderRadius: '50%', background: 'rgba(255,255,255,0.25)', border: `${sz(2)}px solid rgba(255,255,255,0.4)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: sz(14) }}>{(ownerStore?.displayName || store || '?')[0].toUpperCase()}</div>
+          ],
         )}
         {newOrderFlash && <div style={{ background: '#4caf50', color: '#fff', textAlign: 'center', padding: sz(7), fontSize: sz(12), fontWeight: 700 }}>{t.newOrder}</div>}
         {toast && <button onClick={() => setToast('')} style={{ background: '#222', color: '#fff', border: 'none', padding: sz(8), fontSize: sz(11) }}>{toast}</button>}
@@ -519,7 +605,7 @@ export default function AdminDashboard() {
               const cartTotal = sumCartPrices(order.sheinCart?.items);
               const cartCurrency = inferCartCurrency(order);
               return (
-                <div key={order.id} onClick={() => { setSelectedOrder(order); setView('detail'); }} style={{ ...card, padding: `${sz(10)}px ${sz(11)}px`, cursor: 'pointer', borderRight: `${sz(4)}px solid ${order.status === 'done' ? '#4caf50' : T.accent}`, direction: 'ltr' }}>
+                <div key={order.id} onClick={() => { setSelectedOrder(order); setView('detail'); setActiveKey(null); }} style={{ ...card, padding: `${sz(10)}px ${sz(11)}px`, cursor: 'pointer', borderRight: `${sz(4)}px solid ${order.status === 'done' ? '#4caf50' : T.accent}`, direction: 'ltr' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: sz(8), marginBottom: sz(7) }}>
                     <span style={badge(order.status)}>{statusLabel(order.status, t)}</span>
                     {order.orderNumber && <span style={{ fontSize: sz(10), fontWeight: 900, color: T.accent, background: T.accentLight, borderRadius: sz(8), padding: `${sz(3)}px ${sz(7)}px`, direction: 'ltr' }}>{order.orderNumber}</span>}
@@ -550,10 +636,31 @@ export default function AdminDashboard() {
     const order = selectedOrder;
     const items = order.pricing?.items?.length ? order.pricing.items : defaultPricingItems();
     const updatePrice = (key, val) => queueSave({ ...order, pricing: { items: items.map((it) => (it.platform === key ? { ...it, price: val.replace(/\s/g, '').replace(/\++$/, '+') } : it)) } });
+    const handleKeyInput = (key, btn) => {
+      const item = items.find((it) => it.platform === key) || { price: '' };
+      const cur = item.price;
+      let next = cur;
+      if (btn === '⌫') {
+        next = cur.slice(0, -1);
+      } else if (btn === '✓') {
+        setActiveKey(null);
+        return;
+      } else if (btn === '+') {
+        if (cur && !cur.endsWith('+')) next = cur + '+';
+      } else if (btn === '.') {
+        const parts = cur.split('+');
+        const last = parts[parts.length - 1];
+        if (!last.includes('.')) next = cur + '.';
+      } else {
+        next = cur + btn;
+      }
+      updatePrice(key, next);
+    };
     const totalCalc = calcTotal(items);
     const cartTotal = sumCartPrices(order.sheinCart?.items);
     const cartCurrency = inferCartCurrency(order);
     return (
+      <>
       <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: 'Tajawal, sans-serif', direction: t.dir }}>
         {topbar(t.orderDetails, [topBtn(t.invoice, () => setView('invoice')), topBtn(order.status === 'pending' ? t.markDone : t.markPending, () => toggleStatus(order))], [topBtn(t.back, () => setView('dashboard'))])}
         <div style={{ flex: 1, overflowY: 'auto', padding: `${sz(12)}px ${sz(14)}px`, display: 'flex', flexDirection: 'column', gap: sz(10) }}>
@@ -630,8 +737,8 @@ export default function AdminDashboard() {
                 const calc = calcPrice(p.key, item.price);
                 return (
                   <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: sz(6) }}>
-                    <div style={{ flex: 1, background: T.bg, borderRadius: sz(10), padding: `${sz(7)}px ${sz(10)}px`, direction: 'ltr' }}>
-                      <input value={item.price} onChange={(e) => updatePrice(p.key, e.target.value)} placeholder="0.00" style={{ background: 'none', border: 'none', outline: 'none', width: '100%', fontSize: sz(13), color: T.text, fontFamily: 'monospace' }} />
+                    <div onClick={() => setActiveKey(p.key)} style={{ flex: 1, background: activeKey === p.key ? T.accentLight : T.bg, borderRadius: sz(10), padding: `${sz(7)}px ${sz(10)}px`, direction: 'ltr', border: `1.5px solid ${activeKey === p.key ? T.accent : 'transparent'}`, cursor: 'pointer', transition: 'background 0.15s, border-color 0.15s' }}>
+                      <input readOnly inputMode="none" value={item.price.replace(/\+/g, ' + ')} placeholder="0.00" style={{ background: 'none', border: 'none', outline: 'none', width: '100%', fontSize: sz(13), color: T.text, fontFamily: 'monospace', cursor: 'pointer', caretColor: 'transparent', letterSpacing: '-0.3px' }} />
                     </div>
                     {calc !== null && <div style={{ fontSize: sz(11), fontWeight: 700, color: T.gold, minWidth: sz(70), textAlign: 'center', direction: 'ltr' }}>{formatMoney(calc, cartCurrency)}</div>}
                     <div style={{ background: T.accentLight, color: T.accent, borderRadius: sz(8), padding: `${sz(4)}px ${sz(8)}px`, fontSize: sz(9), fontWeight: 700, minWidth: sz(72), textAlign: 'center', flexShrink: 0 }}>{p.label}</div>
@@ -647,6 +754,37 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+      {activeKey && (() => {
+        const KB_ROWS = [['7', '8', '9', '⌫'], ['4', '5', '6', '+'], ['1', '2', '3', '.'], ['0', '✓']];
+        const btnStyle = (btn) => ({
+          padding: `${sz(14)}px 0`,
+          borderRadius: sz(10),
+          border: 'none',
+          fontSize: btn === '⌫' || btn === '✓' ? sz(18) : sz(20),
+          fontWeight: btn === '✓' ? 800 : 600,
+          cursor: 'pointer',
+          background: btn === '✓' ? T.accent : btn === '⌫' ? T.border : T.card,
+          color: btn === '✓' ? '#fff' : T.text,
+          gridColumn: btn === '0' ? 'span 3' : 'span 1',
+          fontFamily: 'monospace',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+        });
+        return (
+          <>
+            <div onClick={() => setActiveKey(null)} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
+            <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 101, background: T.bg, borderTop: `1.5px solid ${T.border}`, borderRadius: `${sz(16)}px ${sz(16)}px 0 0`, padding: sz(12), boxShadow: '0 -4px 24px rgba(0,0,0,0.12)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: sz(8) }}>
+                {KB_ROWS.flat().map((btn) => (
+                  <button key={btn} style={btnStyle(btn)} onMouseDown={(e) => { e.preventDefault(); handleKeyInput(activeKey, btn); }}>
+                    {btn}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        );
+      })()}
+      </>
     );
   }
 
@@ -662,40 +800,81 @@ export default function AdminDashboard() {
         {topbar(t.invoice, [topBtn(t.invoiceCopy, () => captureInvoice('copy')), topBtn(t.whatsapp, openWhatsApp), topBtn(t.print, () => window.print())], [topBtn(t.back, () => setView('detail'))])}
         {toast && <button onClick={() => setToast('')} style={{ background: '#222', color: '#fff', border: 'none', padding: sz(8), fontSize: sz(11) }}>{toast}</button>}
         <div style={{ flex: 1, overflowY: 'auto', padding: sz(14) }}>
-          <div ref={invoiceRef} style={{ background: '#fff', borderRadius: sz(20), overflow: 'hidden', boxShadow: `0 4px 24px ${T.shadow}` }}>
-            <div style={{ background: `linear-gradient(135deg, ${T.accent}18, ${T.accentLight})`, padding: `${sz(22)}px ${sz(18)}px`, textAlign: 'center', borderBottom: `1px solid ${T.border}` }}>
-              <img src={logoImg} alt="logo" style={{ width: sz(76), height: sz(76), borderRadius: '50%', objectFit: 'cover', border: `3px solid ${T.accent}`, marginBottom: sz(8) }} />
-              <div style={{ fontWeight: 800, fontSize: sz(15), color: T.text }}>SHEIN By_Fadwa_Hn</div>
-              <div style={{ fontSize: sz(11), color: T.textMuted, marginTop: sz(2) }}>{t.deliveryMorocco}</div>
-            </div>
-            <div style={{ padding: `${sz(14)}px ${sz(18)}px`, borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: sz(3) }}>
-                <div style={{ fontSize: sz(12), color: T.text }}>{order.phone}</div>
-                <div style={{ fontSize: sz(13), fontWeight: 700, color: T.text }}>{order.name}</div>
+          <div ref={invoiceRef} style={{ background: '#fff', borderRadius: sz(20), overflow: 'hidden', boxShadow: `0 4px 24px ${T.shadow}`, direction: 'ltr' }}>
+
+            {/* Header */}
+            <div style={{ background: `linear-gradient(160deg, #fce4ec 0%, #f8bbd0 55%, #fce4ec 100%)`, padding: `${sz(28)}px ${sz(20)}px ${sz(18)}px`, textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: -sz(30), left: -sz(30), width: sz(130), height: sz(130), borderRadius: '50%', background: 'rgba(255,255,255,0.22)' }} />
+              <div style={{ position: 'absolute', bottom: -sz(20), right: -sz(20), width: sz(100), height: sz(100), borderRadius: '50%', background: 'rgba(255,255,255,0.18)' }} />
+              <div style={{ position: 'relative' }}>
+                {(ownerStore?.photoURL || cachedPhoto)
+                  ? <img src={ownerStore?.photoURL || cachedPhoto} alt="logo" style={{ width: sz(96), height: sz(96), borderRadius: '50%', objectFit: 'cover', border: `${sz(4)}px solid #fff`, boxShadow: '0 4px 16px rgba(0,0,0,0.13)', marginBottom: sz(10), display: 'inline-block' }} />
+                  : <div style={{ width: sz(96), height: sz(96), borderRadius: '50%', background: T.accent, border: `${sz(4)}px solid #fff`, boxShadow: '0 4px 16px rgba(0,0,0,0.13)', margin: `0 auto ${sz(10)}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: sz(38) }}>{(ownerStore?.displayName || store || '?')[0].toUpperCase()}</div>
+                }
+                <div style={{ fontSize: sz(10), fontWeight: 800, letterSpacing: sz(3), color: T.accent, textTransform: 'uppercase', marginBottom: sz(3) }}>SHEIN</div>
+                <div style={{ fontSize: sz(24), fontStyle: 'italic', fontFamily: 'Georgia, "Times New Roman", serif', color: T.accent, fontWeight: 700, lineHeight: 1.2, marginBottom: sz(5) }}>{ownerStore?.displayName || store}</div>
+                <div style={{ fontSize: sz(9), color: T.accent, opacity: 0.75, direction: 'rtl', letterSpacing: 0 }}>{t.deliveryMorocco}</div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: sz(11), color: T.textMuted }}>{formatTime(order.time, lang)}</div>
-                <div style={{ fontSize: sz(11), color: T.textMuted, direction: 'ltr' }}>{t.orderLabel} {order.orderNumber || `#${order.id}`}</div>
+            </div>
+
+            {/* INVOICE divider */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: sz(10), padding: `${sz(14)}px ${sz(20)}px ${sz(10)}px` }}>
+              <div style={{ flex: 1, height: 1, background: T.border }} />
+              <div style={{ fontSize: sz(9), letterSpacing: sz(4), fontWeight: 800, color: T.textMuted, textTransform: 'uppercase' }}>Invoice</div>
+              <div style={{ flex: 1, height: 1, background: T.border }} />
+            </div>
+
+            {/* Customer / Order card */}
+            <div style={{ margin: `0 ${sz(14)}px ${sz(12)}px`, background: T.accentLight, borderRadius: sz(14), padding: `${sz(12)}px ${sz(14)}px` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: sz(5) }}>
+                <div style={{ fontSize: sz(8), letterSpacing: sz(2), fontWeight: 800, color: T.accent, textTransform: 'uppercase' }}>Customer</div>
+                <div style={{ fontSize: sz(8), letterSpacing: sz(2), fontWeight: 800, color: T.accent, textTransform: 'uppercase' }}>Order</div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: sz(17), fontWeight: 800, color: T.text }}>{order.name}</div>
+                  <div style={{ fontSize: sz(11), color: T.textMuted }}>{order.phone}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: sz(20), fontWeight: 900, color: T.text }}>#{order.orderNumber || order.id}</div>
+                  <div style={{ fontSize: sz(10), color: T.textMuted }}>{formatTime(order.time, lang)}</div>
+                </div>
               </div>
             </div>
-            <div style={{ padding: `0 ${sz(18)}px` }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ borderBottom: `2px solid ${T.border}` }}><th style={{ padding: `${sz(10)}px 0`, fontSize: sz(11), color: T.textMuted, textAlign: 'left' }}>{t.sale}</th><th style={{ padding: `${sz(10)}px 0`, fontSize: sz(11), color: T.textMuted, textAlign: 'center' }}>{t.cost}</th><th style={{ padding: `${sz(10)}px 0`, fontSize: sz(11), color: T.textMuted, textAlign: 'right' }}>{t.platform}</th></tr></thead>
-                <tbody>
-                  {hasPrice ? PLATFORMS.map((p) => {
-                    const item = items.find((it) => it.platform === p.key);
-                    const sell = calcPrice(p.key, item?.price);
-                    if (!sell) return null;
-                    return <tr key={p.key} style={{ borderBottom: `1px solid ${T.border}` }}><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(13), fontWeight: 700, color: T.gold, textAlign: 'left', direction: 'ltr' }}>{formatMoney(sell, cartCurrency)}</td><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(12), color: T.text, textAlign: 'center', direction: 'ltr' }}>{formatPricingCost(item?.price, cartCurrency)}</td><td style={{ padding: `${sz(10)}px 0`, fontSize: sz(12), color: T.text, textAlign: 'right' }}>{p.label}</td></tr>;
-                  }) : <tr><td colSpan={3} style={{ textAlign: 'center', padding: sz(18), color: T.textMuted, fontSize: sz(12) }}>{t.noPrice}</td></tr>}
-                </tbody>
-              </table>
+
+            {/* Table */}
+            <div style={{ margin: `0 ${sz(14)}px` }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', background: T.accent, borderRadius: `${sz(10)}px ${sz(10)}px 0 0`, padding: `${sz(10)}px ${sz(12)}px` }}>
+                <div style={{ fontSize: sz(9), letterSpacing: 0, fontWeight: 800, color: '#fff', textAlign: 'left', direction: t.dir }}>{t.platform}</div>
+                <div style={{ fontSize: sz(9), letterSpacing: 0, fontWeight: 800, color: '#fff', textAlign: 'center', direction: t.dir }}>{t.cost}</div>
+                <div style={{ fontSize: sz(9), letterSpacing: 0, fontWeight: 800, color: '#fff', textAlign: 'right', direction: t.dir }}>{t.sale}</div>
+              </div>
+              {hasPrice ? PLATFORMS.map((p, idx) => {
+                const item = items.find((it) => it.platform === p.key);
+                const sell = calcPrice(p.key, item?.price);
+                if (!sell) return null;
+                return (
+                  <div key={p.key} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: `${sz(11)}px ${sz(12)}px`, background: idx % 2 === 0 ? '#fff' : T.accentLight, borderBottom: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: sz(13), fontWeight: 700, color: T.text, textAlign: 'left' }}>{p.label}</div>
+                    <div style={{ fontSize: sz(12), color: T.textMuted, textAlign: 'center' }}>{formatPricingCost(item?.price, cartCurrency)}</div>
+                    <div style={{ fontSize: sz(13), fontWeight: 800, color: T.gold, textAlign: 'right' }}>{formatMoney(sell, cartCurrency)}</div>
+                  </div>
+                );
+              }) : <div style={{ padding: `${sz(18)}px`, textAlign: 'center', color: T.textMuted, fontSize: sz(12), background: '#fff' }}>{t.noPrice}</div>}
+              {hasPrice && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.accentLight, borderRadius: `0 0 ${sz(10)}px ${sz(10)}px`, padding: `${sz(12)}px ${sz(14)}px` }}>
+                  <div style={{ fontSize: sz(13), fontWeight: 700, color: T.accent }}>Total</div>
+                  <div style={{ fontSize: sz(24), fontWeight: 900, color: T.accent }}>{formatMoney(total, cartCurrency)}</div>
+                </div>
+              )}
             </div>
-            {hasPrice && <div style={{ margin: `0 ${sz(18)}px`, padding: `${sz(12)}px 0`, borderTop: `2px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}><div style={{ fontSize: sz(17), fontWeight: 800, color: T.gold, direction: 'ltr' }}>{formatMoney(total, cartCurrency)}</div><div style={{ fontSize: sz(13), fontWeight: 700, color: T.text }}>{t.total2}</div></div>}
-            <div style={{ background: `linear-gradient(135deg, ${T.accent}18, ${T.accentLight})`, padding: `${sz(14)}px ${sz(18)}px`, textAlign: 'center' }}>
-              <div style={{ fontSize: sz(13), fontWeight: 700, color: T.accent }}>{t.thankYou}</div>
-              <div style={{ fontSize: sz(10), color: T.textMuted, marginTop: sz(3) }}>SHEIN By_Fadwa_Hn · Lamar</div>
+
+            {/* Footer */}
+            <div style={{ padding: `${sz(18)}px ${sz(16)}px`, textAlign: 'center' }}>
+              <div style={{ fontSize: sz(15), fontStyle: 'italic', fontFamily: 'Georgia, "Times New Roman", serif', color: T.accent, marginBottom: sz(4) }}>Thank you for your trust 🌸</div>
+              <div style={{ fontSize: sz(10), color: T.textMuted, direction: 'rtl', letterSpacing: 0 }}>{t.thankYou.replace(' 💖', '')} · {ownerStore?.displayName || store}</div>
             </div>
+
           </div>
         </div>
       </div>

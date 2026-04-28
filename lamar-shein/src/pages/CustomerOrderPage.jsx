@@ -34,15 +34,10 @@ export default function CustomerOrderPage() {
   const profileKey = `lamar_profile_${store}`;
 
   const [storeStatus, setStoreStatus] = useState('checking');
+  const [storeData, setStoreData] = useState(null);
+  const [cachedPhoto, setCachedPhoto] = useState(() => localStorage.getItem(`lamar_store_photo_${store}`) || '');
   const [storeError, setStoreError] = useState('');
-  const [step, setStep] = useState(() => {
-    try {
-      const p = JSON.parse(localStorage.getItem(profileKey));
-      return p?.name && p?.phone ? 1 : 0;
-    } catch {
-      return 0;
-    }
-  });
+  const [step, setStep] = useState(1);
   const [profile, setProfile] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(profileKey)) || { name: '', phone: '' };
@@ -50,7 +45,7 @@ export default function CustomerOrderPage() {
       return { name: '', phone: '' };
     }
   });
-  const [order, setOrder] = useState({ name: '', link: '' });
+  const [order, setOrder] = useState({ link: '' });
   const [sending, setSending] = useState(false);
   const [submitStage, setSubmitStage] = useState('idle');
   const [sent, setSent] = useState(false);
@@ -61,7 +56,7 @@ export default function CustomerOrderPage() {
   const confirmationRef = useRef(null);
 
   const storeValid = store && isValidStoreSlug(store);
-  const showReveal = order.name.trim().toLowerCase() === 'fadwa.hn';
+  const showReveal = false;
 
   useEffect(() => {
     document.documentElement.lang = t.lang;
@@ -78,7 +73,14 @@ export default function CustomerOrderPage() {
     setStoreStatus('checking');
     getStore(store)
       .then((foundStore) => {
-        if (mounted) setStoreStatus(foundStore ? 'ready' : 'missing');
+        if (mounted) {
+          setStoreData(foundStore);
+          setStoreStatus(foundStore ? 'ready' : 'missing');
+          if (foundStore?.photoURL) {
+            localStorage.setItem(`lamar_store_photo_${store}`, foundStore.photoURL);
+            setCachedPhoto(foundStore.photoURL);
+          }
+        }
       })
       .catch((error) => {
         if (!mounted) return;
@@ -99,24 +101,10 @@ export default function CustomerOrderPage() {
     localStorage.setItem(profileKey, JSON.stringify(nextProfile));
   };
 
-  const handleProfileContinue = () => {
-    const nextErrors = {};
-    if (!profile.name.trim()) nextErrors.profileName = true;
-    if (!profile.phone.trim()) nextErrors.profilePhone = true;
-    if (Object.keys(nextErrors).length) {
-      setErrors(nextErrors);
-      shakeIt('profile');
-      return;
-    }
-
-    setErrors({});
-    saveProfile(profile);
-    setStep(1);
-  };
-
   const handleSubmit = async () => {
     const nextErrors = {};
-    if (!order.name.trim()) nextErrors.orderName = true;
+    if (!profile.name.trim()) nextErrors.name = true;
+    if (!profile.phone.trim()) nextErrors.phone = true;
     if (!order.link.trim()) nextErrors.orderLink = true;
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
@@ -125,6 +113,7 @@ export default function CustomerOrderPage() {
     }
 
     setErrors({});
+    saveProfile(profile);
     setSending(true);
     setSubmitStage('scanning');
 
@@ -147,7 +136,7 @@ export default function CustomerOrderPage() {
 
       setSubmitStage('saving');
       const created = await createOrder(store, {
-        name: order.name.trim(),
+        name: profile.name.trim(),
         phone: profile.phone,
         link: submittedLink,
         submittedByName: profile.name,
@@ -169,7 +158,7 @@ export default function CustomerOrderPage() {
   const buildConfirmationText = () => [
     `رقم الطلب: ${createdOrder?.orderNumber || createdOrderNumber}`,
     `المتجر: ${store}`,
-    `اسم الزبونة: ${createdOrder?.name || order.name}`,
+    `اسم الزبونة: ${createdOrder?.name || profile.name}`,
     `الهاتف: ${createdOrder?.phone || profile.phone}`,
     `رابط المنتج: ${createdOrder?.link || order.link}`,
     `أرسلت بواسطة: ${createdOrder?.submittedByName || profile.name}`,
@@ -197,10 +186,9 @@ export default function CustomerOrderPage() {
     setSent(false);
     setCreatedOrderNumber('');
     setCreatedOrder(null);
-    setOrder({ name: '', link: '' });
+    setOrder({ link: '' });
     localStorage.removeItem(profileKey);
     setProfile({ name: '', phone: '' });
-    setStep(0);
   };
 
   const inputStyle = (hasError) => ({
@@ -282,9 +270,16 @@ export default function CustomerOrderPage() {
     return (
       <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', direction: t.dir }}>
         <Header>
-          <img src={logoImg} alt="logo" style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '3px solid rgba(255,255,255,0.3)', marginBottom: 10 }} />
-          <div style={{ color: '#fff', fontSize: 20, fontWeight: 800, marginBottom: 4 }}>تم استلام طلبك</div>
-          <div style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12 }}>احتفظي برقم الطلب للاستفسار بسرعة.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            {(storeData?.photoURL || cachedPhoto)
+              ? <img src={storeData?.photoURL || cachedPhoto} alt="logo" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', border: '3px solid rgba(255,255,255,0.4)', boxShadow: '0 4px 16px rgba(0,0,0,0.18)' }} />
+              : <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.25)', border: '3px solid rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 34 }}>{(storeData?.displayName || store || '?')[0].toUpperCase()}</div>
+            }
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, letterSpacing: 0.5 }}>{(storeData?.displayName || store).toUpperCase()}</div>
+              <div style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12, marginTop: 2 }}>تم استلام طلبك ✓</div>
+            </div>
+          </div>
         </Header>
 
         <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -326,48 +321,18 @@ export default function CustomerOrderPage() {
     );
   }
 
-  if (step === 0) {
-    return (
-      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', direction: t.dir }}>
-        <Header>
-          <img src={logoImg} alt="logo" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', border: '3px solid rgba(255,255,255,0.3)', marginBottom: 10 }} />
-          <div style={{ color: '#fff', fontSize: 20, fontWeight: 800, marginBottom: 4 }}>{t.welcome}</div>
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>{t.profileSubtitle}</div>
-          <div style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '4px 12px' }}>
-            <span style={{ color: '#fff', fontSize: 10 }}>{t.delivery}</span>
-          </div>
-        </Header>
-        <div style={{ flex: 1, padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className={shake === 'profile' ? 'shake' : ''}>
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>{t.nameLabel}</label>
-              <input style={inputStyle(errors.profileName)} value={profile.name} onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))} placeholder={t.namePlaceholder} type="text" autoComplete="name" />
-              {errors.profileName && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
-            </div>
-            <div>
-              <label style={labelStyle}>{t.phoneLabel}</label>
-              <input style={{ ...inputStyle(errors.profilePhone), direction: 'ltr', textAlign: 'left' }} value={profile.phone} onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))} placeholder={t.phonePlaceholder} type="tel" autoComplete="tel" />
-              {errors.profilePhone && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
-            </div>
-          </div>
-          <button onClick={handleProfileContinue} style={{ marginTop: 8, width: '100%', padding: '15px', borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${T.accent}, ${T.accentDark})`, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', boxShadow: `0 4px 16px ${T.accent}55` }}>
-            {t.continueBtn}
-          </button>
-        </div>
-        <Steps active={0} />
-      </div>
-    );
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', direction: t.dir }}>
       <Header>
         {!showReveal && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 12 }}>
-            <img src={logoImg} alt="logo" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(255,255,255,0.4)' }} />
-            <div>
-              <div style={{ color: '#fff', fontSize: 16, fontWeight: 800 }}>{t.orderTitle}</div>
-              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>{t.orderSubtitle}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            {(storeData?.photoURL || cachedPhoto)
+              ? <img src={storeData?.photoURL || cachedPhoto} alt="logo" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', border: '3px solid rgba(255,255,255,0.4)', boxShadow: '0 4px 16px rgba(0,0,0,0.18)' }} />
+              : <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.25)', border: '3px solid rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 34 }}>{(storeData?.displayName || store || '?')[0].toUpperCase()}</div>
+            }
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#fff', fontSize: 18, fontWeight: 800, letterSpacing: 0.5 }}>{(storeData?.displayName || store).toUpperCase()}</div>
+              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 2 }}>{t.orderSubtitle}</div>
             </div>
           </div>
         )}
@@ -377,29 +342,34 @@ export default function CustomerOrderPage() {
             <div><Link to={`/${store}/admin`} style={{ color: '#fff', fontSize: 12, fontWeight: 800, textDecoration: 'underline' }}>{t.dashboard}</Link></div>
           </div>
         )}
-        <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={() => { setStep(0); localStorage.removeItem(profileKey); setErrors({}); }} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: 11, cursor: 'pointer' }}>{t.notYou}</button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ textAlign: isRTL ? 'right' : 'left' }}>
-              <div style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>{profile.name}</div>
-              <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 10 }}>{profile.phone}</div>
-            </div>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 13 }}>
-              {profile.name?.[0]?.toUpperCase() || '?'}
-            </div>
-          </div>
-        </div>
       </Header>
       <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className={shake === 'order' ? 'shake' : ''}>
           <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>{t.customerLabel}</label>
-            <input style={inputStyle(errors.orderName)} value={order.name} onChange={(e) => setOrder((o) => ({ ...o, name: e.target.value }))} placeholder={t.customerPlaceholder} type="text" />
-            {errors.orderName && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
+            <label style={labelStyle}>{t.nameLabel}</label>
+            <input style={inputStyle(errors.name)} value={profile.name} onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))} placeholder={t.namePlaceholder} type="text" autoComplete="name" />
+            {errors.name && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>{t.phoneLabel}</label>
+            <input style={{ ...inputStyle(errors.phone), direction: 'ltr', textAlign: 'left' }} value={profile.phone} onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))} placeholder={t.phonePlaceholder} type="tel" autoComplete="tel" />
+            {errors.phone && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
           </div>
           <div>
             <label style={labelStyle}>{t.linkLabel}</label>
-            <input style={{ ...inputStyle(errors.orderLink), direction: 'ltr', textAlign: 'left' }} value={order.link} onChange={(e) => setOrder((o) => ({ ...o, link: e.target.value }))} placeholder={t.linkPlaceholder} type="url" autoComplete="off" />
+            <div style={{ position: 'relative' }}>
+              <input style={{ ...inputStyle(errors.orderLink), direction: 'ltr', textAlign: 'left', paddingRight: 44 }} value={order.link} onChange={(e) => setOrder((o) => ({ ...o, link: e.target.value }))} placeholder={t.linkPlaceholder} type="url" autoComplete="off" />
+              <button
+                type="button"
+                onClick={async () => { try { const text = await navigator.clipboard.readText(); setOrder((o) => ({ ...o, link: text.trim() })); } catch {} }}
+                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: T.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+            </div>
             {errors.orderLink && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
           </div>
         </div>

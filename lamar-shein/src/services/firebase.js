@@ -352,6 +352,11 @@ export async function deleteOrderById(storeSlug, orderId) {
   await deleteDoc(doc(db, 'stores', sanitizeStoreSlug(storeSlug), 'orders', String(orderId)));
 }
 
+export async function updateStore(storeSlug, updates) {
+  const slug = sanitizeStoreSlug(storeSlug);
+  await updateDoc(doc(db, 'stores', slug), { ...updates, updatedAt: serverTimestamp() });
+}
+
 export async function clearAllOrders(storeSlug, orderIds) {
   const batch = writeBatch(db);
   orderIds.forEach((orderId) => {

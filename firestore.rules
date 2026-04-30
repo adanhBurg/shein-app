@@ -85,11 +85,16 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "displayName",
           "ownerEmail",
+          "photoURL",
           "updatedAt"
         ])
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.slug == storeId
-        && request.resource.data.subdomain == storeId;
+        && request.resource.data.subdomain == storeId
+        && (!("photoURL" in request.resource.data) || (
+          request.resource.data.photoURL is string
+          && request.resource.data.photoURL.size() <= 900000
+        ));
     }
 
     function isValidOrderCreate(storeId) {

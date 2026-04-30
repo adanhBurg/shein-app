@@ -127,6 +127,71 @@ function loadScript(src, globalName) {
 
 const statusLabel = (status, t) => (status === 'done' ? t.done : t.pending);
 const clampScale = (value) => Math.min(1.3, Math.max(0.9, value));
+const PRICE_SEPARATOR = ' + ';
+
+function priceToDisplay(value) {
+  return String(value || '').replace(/\+/g, PRICE_SEPARATOR);
+}
+
+function displayToPrice(value) {
+  return String(value || '').replace(/\s/g, '').replace(/\++$/, '+');
+}
+
+function pricingItemsFromOrder(order) {
+  const source = order?.pricing?.items?.length ? order.pricing.items : defaultPricingItems();
+  return PLATFORMS.map((platform) => {
+    const item = source.find((it) => it.platform === platform.key);
+    return { platform: platform.key, price: typeof item?.price === 'string' ? item.price : '' };
+  });
+}
+
+function editPriceDisplay(display, start, end, btn) {
+  const from = Math.max(0, Math.min(start ?? display.length, display.length));
+  const to = Math.max(from, Math.min(end ?? from, display.length));
+  let nextDisplay = display;
+  let nextPos = from;
+
+  if (btn === '⌫') {
+    if (from !== to) {
+      nextDisplay = display.slice(0, from) + display.slice(to);
+      return { nextDisplay, nextPos: from };
+    }
+    if (from === 0) return { nextDisplay, nextPos };
+
+    let deleteStart = from - 1;
+    let deleteEnd = from;
+    const ch = display[deleteStart];
+    if (ch === ' ' || ch === '+') {
+      while (deleteStart > 0 && (display[deleteStart - 1] === ' ' || display[deleteStart - 1] === '+')) deleteStart--;
+      while (deleteEnd < display.length && (display[deleteEnd] === ' ' || display[deleteEnd] === '+')) deleteEnd++;
+    }
+    nextDisplay = display.slice(0, deleteStart) + display.slice(deleteEnd);
+    return { nextDisplay, nextPos: deleteStart };
+  }
+
+  if (btn === '+') {
+    const before = display.slice(0, from);
+    const after = display.slice(to);
+    const rawBefore = before.replace(/\s/g, '');
+    const rawAfter = after.replace(/\s/g, '');
+    if (!rawBefore || rawBefore.endsWith('+') || rawAfter.startsWith('+')) return { nextDisplay, nextPos };
+    nextDisplay = before + PRICE_SEPARATOR + after;
+    return { nextDisplay, nextPos: before.length + PRICE_SEPARATOR.length };
+  }
+
+  if (btn === '.') {
+    const before = display.slice(0, from);
+    const after = display.slice(to);
+    const segmentBefore = before.split('+').pop();
+    const segmentAfter = after.split('+')[0];
+    if (segmentBefore.includes('.') || segmentAfter.includes('.')) return { nextDisplay, nextPos };
+    nextDisplay = before + '.' + after;
+    return { nextDisplay, nextPos: before.length + 1 };
+  }
+
+  nextDisplay = display.slice(0, from) + btn + display.slice(to);
+  return { nextDisplay, nextPos: from + btn.length };
+}
 
 export default function AdminDashboard() {
   const { store: routeStore } = useParams();
@@ -160,15 +225,20 @@ export default function AdminDashboard() {
   const [commName, setCommName] = useState('');
   const [commLink, setCommLink] = useState('');
   const [commPricing, setCommPricing] = useState(() => defaultPricingItems());
+  const [pricingDraft, setPricingDraft] = useState(() => defaultPricingItems());
+  const [pricingDraftOrderId, setPricingDraftOrderId] = useState('');
+  const [pricingDraftDirty, setPricingDraftDirty] = useState(false);
+  const [pricingSaveState, setPricingSaveState] = useState('idle');
   const [adminScale, setAdminScale] = useState(() => {
     const saved = Number(localStorage.getItem('lamar_admin_scale'));
     return Number.isFinite(saved) ? clampScale(saved) : 1;
   });
   const prevCountRef = useRef(0);
   const saveTimersRef = useRef(new Map());
+  const pricingSaveFeedbackTimerRef = useRef(null);
   const invoiceRef = useRef(null);
   const priceCursorRef = useRef({});
-  const priceDisplayRefs = useRef({});
+  const priceInputRefs = useRef({});
 
   useEffect(() => {
     document.documentElement.lang = t.lang;
@@ -237,6 +307,27 @@ export default function AdminDashboard() {
     if (selectedOrder?.id) setOrderItemsExpanded(true);
   }, [selectedOrder?.id]);
 
+  useEffect(() => {
+    if (!selectedOrder?.id) {
+      setPricingDraft(defaultPricingItems());
+      setPricingDraftOrderId('');
+      setPricingDraftDirty(false);
+      setPricingSaveState('idle');
+      return;
+    }
+
+    if (pricingDraftOrderId !== selectedOrder.id) {
+      setPricingDraft(pricingItemsFromOrder(selectedOrder));
+      setPricingDraftOrderId(selectedOrder.id);
+      setPricingDraftDirty(false);
+      setPricingSaveState('idle');
+    }
+  }, [selectedOrder?.id, pricingDraftOrderId]);
+
+  useEffect(() => () => {
+    if (pricingSaveFeedbackTimerRef.current) clearTimeout(pricingSaveFeedbackTimerRef.current);
+  }, []);
+
   const pending = orders.filter((o) => o.status === 'pending');
   const done = orders.filter((o) => o.status === 'done');
   const uniqueCustomers = [...new Map(orders.map((o) => [String(o.name || '').toLowerCase(), o])).values()];
@@ -257,6 +348,28 @@ export default function AdminDashboard() {
   const sz = useCallback((value) => Math.round(value * adminScale * 10) / 10, [adminScale]);
   const adjustAdminScale = (delta) => {
     setAdminScale((current) => Math.round(clampScale(current + delta) * 100) / 100);
+  };
+  const restorePriceCursor = (scope, key, pos) => {
+    requestAnimationFrame(() => {
+      const input = priceInputRefs.current[`${scope}_${key}`];
+      if (!input) return;
+      resizePriceEditor(input);
+      input.focus();
+      input.setSelectionRange(pos, pos);
+    });
+  };
+  const resizePriceEditor = (input) => {
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, sz(92))}px`;
+  };
+  const openNewOrderForm = () => {
+    setCommName('');
+    setCommLink('');
+    setCommPricing(defaultPricingItems());
+    setActiveKey(null);
+    setShowCommPanel(false);
+    setView('newOrder');
   };
 
   const queueSave = useCallback((updated) => {
@@ -298,20 +411,20 @@ export default function AdminDashboard() {
     setTimeout(() => setCopiedLink(''), 1800);
   };
 
-  const handleImageUpload = (order, event) => {
+  const handleImageUpload = (order, event, onPriceDetected) => {
     Array.from(event.target.files || []).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const updated = { ...order, images: [...(order.images || []), ev.target.result] };
         queueSave(updated);
-        runOcr(updated, ev.target.result);
+        runOcr(updated, ev.target.result, onPriceDetected);
       };
       reader.readAsDataURL(file);
     });
     event.target.value = '';
   };
 
-  const runOcr = async (order, image) => {
+  const runOcr = async (order, image, onPriceDetected) => {
     try {
       const Tesseract = await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js', 'Tesseract');
       const result = await Tesseract.recognize(image, 'eng');
@@ -320,7 +433,9 @@ export default function AdminDashboard() {
       const price = prices.find((value) => Number(value.replace(',', '.')) > 0);
       if (!price) return;
       const platform = /market\s*place/i.test(text) ? 'marketplace' : 'shein';
-      appendPrice(order, platform, price.replace(',', '.'));
+      const normalizedPrice = price.replace(',', '.');
+      if (onPriceDetected) onPriceDetected(platform, normalizedPrice);
+      else appendPrice(order, platform, normalizedPrice);
     } catch {
       // OCR is best effort; uploaded images are still saved.
     }
@@ -336,7 +451,7 @@ export default function AdminDashboard() {
     queueSave({ ...order, pricing: { items: updatedItems } });
   };
 
-  const startVoice = (order) => {
+  const startVoice = (order, onPriceDetected) => {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
       setToast(t.voiceUnsupported);
@@ -353,7 +468,11 @@ export default function AdminDashboard() {
       const transcript = Array.from(event.results).map((result) => result[0]?.transcript || '').join(' ');
       const platform = /market|ماركت/i.test(transcript) ? 'marketplace' : /plus|\+/i.test(transcript) ? 'sheinPlus' : activePlatform;
       const value = transcript.replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).match(/\d+(?:[.,]\d+)?/g)?.[0];
-      if (value) appendPrice(order, platform, value.replace(',', '.'));
+      if (value) {
+        const normalizedValue = value.replace(',', '.');
+        if (onPriceDetected) onPriceDetected(platform, normalizedValue);
+        else appendPrice(order, platform, normalizedValue);
+      }
     };
     recognition.start();
   };
@@ -493,13 +612,17 @@ export default function AdminDashboard() {
                 onClick={async () => {
                   const updates = { displayName: editDisplayName.trim() || store };
                   if (editPhotoData) updates.photoURL = editPhotoData;
-                  await updateStore(store, updates).catch((err) => setToast(err?.message || String(err)));
-                  if (updates.photoURL) {
-                    localStorage.setItem(`lamar_store_photo_${store}`, updates.photoURL);
-                    setCachedPhoto(updates.photoURL);
+                  try {
+                    await updateStore(store, updates);
+                    if (updates.photoURL) {
+                      localStorage.setItem(`lamar_store_photo_${store}`, updates.photoURL);
+                      setCachedPhoto(updates.photoURL);
+                    }
+                    setOwnerStore((s) => ({ ...s, ...updates }));
+                    setEditingProfile(false);
+                  } catch (err) {
+                    setToast(err?.message || String(err));
                   }
-                  setOwnerStore((s) => ({ ...s, ...updates }));
-                  setEditingProfile(false);
                 }}
                 style={{ ...sidebarButton, background: `linear-gradient(135deg, ${T.accent}, ${T.accentDark})`, color: '#fff', border: 'none', fontSize: sz(11) }}
               >
@@ -582,6 +705,120 @@ export default function AdminDashboard() {
     );
   }
 
+  if (view === 'newOrder') {
+    const commTotal = calcTotal(commPricing);
+    const commUpdatePrice = (key, val) => setCommPricing((prev) => prev.map((it) => it.platform === key ? { ...it, price: displayToPrice(val) } : it));
+    const commHandleKey = (key, btn) => {
+      if (btn === '✓') { setActiveKey(null); return; }
+      const item = commPricing.find((it) => it.platform === key) || { price: '' };
+      const disp = priceToDisplay(item.price);
+      const input = priceInputRefs.current[`comm_${key}`];
+      const start = input?.selectionStart ?? priceCursorRef.current[key] ?? disp.length;
+      const end = input?.selectionEnd ?? start;
+      const { nextDisplay, nextPos } = editPriceDisplay(disp, start, end, btn);
+      priceCursorRef.current[key] = nextPos;
+      commUpdatePrice(key, nextDisplay);
+      restorePriceCursor('comm', key, nextPos);
+    };
+    const createAdminOrder = () => {
+      if (!commName.trim() && commPricing.every((it) => !it.price)) return;
+      createOrder(store, { name: commName, phone: '', link: commLink, pricing: { items: commPricing }, submittedByName: '' })
+        .then((createdOrder) => {
+          setOrders((current) => [createdOrder, ...current.filter((order) => order.id !== createdOrder.id)]);
+          setSelectedOrder(createdOrder);
+          setPricingDraft(pricingItemsFromOrder(createdOrder));
+          setPricingDraftOrderId(createdOrder.id);
+          setPricingDraftDirty(false);
+          setPricingSaveState('idle');
+          setCommName('');
+          setCommLink('');
+          setCommPricing(defaultPricingItems());
+          setActiveKey(null);
+          setView('detail');
+        })
+        .catch((err) => setToast(err?.message || String(err)));
+    };
+    const inputStyle = { width: '100%', padding: `${sz(11)}px ${sz(13)}px`, borderRadius: sz(11), border: `1.5px solid ${T.border}`, background: T.bg, color: T.text, fontSize: sz(13), fontFamily: 'Tajawal, sans-serif', outline: 'none', boxSizing: 'border-box', direction: t.dir };
+    const KB_ROWS = [['7', '8', '9', '⌫'], ['4', '5', '6', '+'], ['1', '2', '3', '.'], ['0', '✓']];
+    const btnStyle = (btn) => ({
+      padding: `${sz(14)}px 0`,
+      borderRadius: sz(10),
+      border: 'none',
+      fontSize: btn === '⌫' || btn === '✓' ? sz(18) : sz(20),
+      fontWeight: btn === '✓' ? 800 : 600,
+      cursor: 'pointer',
+      background: btn === '✓' ? T.accent : btn === '⌫' ? T.border : T.card,
+      color: btn === '✓' ? '#fff' : T.text,
+      gridColumn: btn === '0' ? 'span 3' : 'span 1',
+      fontFamily: 'monospace',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    });
+    return (
+      <>
+        <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: 'Tajawal, sans-serif', direction: t.dir }}>
+          {topbar(t.orderTitle, [topBtn('←', () => { setActiveKey(null); setView('dashboard'); })], [])}
+          {toast && <button onClick={() => setToast('')} style={{ background: '#222', color: '#fff', border: 'none', padding: sz(8), fontSize: sz(11) }}>{toast}</button>}
+          <div style={{ flex: 1, overflowY: 'auto', padding: `${sz(12)}px ${sz(14)}px`, display: 'flex', flexDirection: 'column', gap: sz(10) }}>
+            <div style={card}>
+              <div style={{ fontSize: sz(13), fontWeight: 800, color: T.text, marginBottom: sz(10), textAlign: t.dir === 'rtl' ? 'right' : 'left' }}>{t.orderDetails}</div>
+              <input value={commName} onChange={(e) => setCommName(e.target.value)} placeholder={t.customerLabel} style={{ ...inputStyle, marginBottom: sz(10) }} />
+              <input value={commLink} onChange={(e) => setCommLink(e.target.value)} placeholder={t.linkPlaceholder} style={{ ...inputStyle, direction: 'ltr', color: T.accent, textAlign: 'left' }} />
+            </div>
+            <div style={card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: sz(10) }}>
+                <div style={{ display: 'flex', gap: sz(4), flexWrap: 'wrap' }}>
+                  {PLATFORMS.map((p) => <button key={p.key} onClick={() => setActivePlatform(p.key)} style={{ padding: `${sz(3)}px ${sz(8)}px`, borderRadius: sz(10), border: `1.5px solid ${activePlatform === p.key ? T.accent : T.border}`, background: activePlatform === p.key ? T.accentLight : 'transparent', color: activePlatform === p.key ? T.accent : T.textMuted, fontSize: sz(9), fontWeight: 700, cursor: 'pointer' }}>{p.label}</button>)}
+                </div>
+                <div style={{ fontSize: sz(13), fontWeight: 700, color: T.text }}>{t.pricing}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: sz(8) }}>
+                {PLATFORMS.map((p) => {
+                  const item = commPricing.find((it) => it.platform === p.key) || { price: '', platform: p.key };
+                  const calc = calcPrice(p.key, item.price);
+                  return (
+                    <div key={p.key} style={{ display: 'flex', alignItems: 'flex-start', gap: sz(6), direction: 'ltr', flexWrap: 'wrap' }}>
+                      <div style={{ background: T.accentLight, color: T.accent, borderRadius: sz(8), padding: `${sz(4)}px ${sz(8)}px`, fontSize: sz(9), fontWeight: 700, minWidth: sz(72), textAlign: 'center', flexShrink: 0, marginTop: sz(5) }}>{p.label}</div>
+                      <textarea
+                        ref={(el) => { priceInputRefs.current[`comm_${p.key}`] = el; resizePriceEditor(el); }}
+                        value={priceToDisplay(item.price)}
+                        onFocus={(e) => { resizePriceEditor(e.currentTarget); setActiveKey(p.key); priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                        onClick={(e) => { priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                        onSelect={(e) => { priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                        onChange={(e) => {
+                          const cleaned = e.target.value.replace(/[^\d.+\s]/g, '');
+                          priceCursorRef.current[p.key] = e.target.selectionStart ?? cleaned.length;
+                          commUpdatePrice(p.key, cleaned);
+                          resizePriceEditor(e.currentTarget);
+                        }}
+                        placeholder="0.00"
+                        inputMode="decimal"
+                        rows={1}
+                        style={{ flex: '1 1 170px', minWidth: sz(150), background: activeKey === p.key ? T.accentLight : T.bg, borderRadius: sz(10), padding: `${sz(7)}px ${sz(10)}px`, direction: 'ltr', border: `1.5px solid ${activeKey === p.key ? T.accent : 'transparent'}`, cursor: 'text', position: 'relative', zIndex: 102, transition: 'background 0.15s, border-color 0.15s', width: '100%', fontSize: sz(13), color: item.price ? T.text : T.textMuted, fontFamily: 'monospace', letterSpacing: '-0.3px', minHeight: `${sz(34)}px`, maxHeight: `${sz(92)}px`, lineHeight: 1.45, outline: 'none', boxSizing: 'border-box', resize: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                      />
+                      {calc !== null && <div style={{ flex: '1 0 100%', fontSize: sz(11), fontWeight: 700, color: T.gold, minWidth: sz(70), textAlign: 'right', direction: 'ltr' }}>{formatMoney(calc, 'EUR')}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+              {commTotal > 0 && <div style={{ marginTop: sz(12), paddingTop: sz(10), borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', direction: 'ltr' }}><div style={{ fontSize: sz(12), color: T.textMuted }}>{t.total2}</div><div style={{ fontSize: sz(15), fontWeight: 800, color: T.gold }}>{formatMoney(commTotal, 'EUR')}</div></div>}
+              <button onClick={createAdminOrder} style={{ width: '100%', marginTop: sz(12), padding: sz(11), borderRadius: sz(11), border: 'none', background: T.accent, color: '#fff', fontSize: sz(12), fontWeight: 800, cursor: 'pointer', fontFamily: 'Tajawal, sans-serif' }}>{t.save}</button>
+            </div>
+          </div>
+        </div>
+        {activeKey && (() => (
+          <>
+            <div onClick={() => setActiveKey(null)} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
+            <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 101, background: T.bg, borderTop: `1.5px solid ${T.border}`, borderRadius: `${sz(16)}px ${sz(16)}px 0 0`, padding: sz(12), boxShadow: '0 -4px 24px rgba(0,0,0,0.12)', direction: 'ltr' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: sz(8) }}>
+                {KB_ROWS.flat().map((btn) => <button key={btn} style={btnStyle(btn)} onMouseDown={(e) => { e.preventDefault(); commHandleKey(activeKey, btn); }}>{btn}</button>)}
+              </div>
+            </div>
+          </>
+        ))()}
+      </>
+    );
+  }
+
   if (view === 'dashboard') {
     return (
       <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', fontFamily: 'Tajawal, sans-serif', direction: t.dir }}>
@@ -613,36 +850,22 @@ export default function AdminDashboard() {
           <div style={{ fontSize: sz(13), fontWeight: 700, color: T.text, marginBottom: sz(8) }}>{t.orders}</div>
           <div style={{ display: 'flex', gap: sz(8), alignItems: 'center', marginBottom: sz(10) }}>
             <input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder={t.searchOrders} style={{ flex: 1, padding: `${sz(11)}px ${sz(13)}px`, borderRadius: sz(12), border: `1.5px solid ${T.border}`, background: T.card, color: T.text, fontSize: sz(12), fontFamily: 'Tajawal, sans-serif', outline: 'none', boxSizing: 'border-box', direction: t.dir, textAlign: t.dir === 'rtl' ? 'right' : 'left' }} />
-            <button onClick={() => setShowCommPanel((v) => !v)} style={{ width: sz(42), height: sz(42), borderRadius: sz(12), border: 'none', background: showCommPanel ? T.accent : T.accentLight, color: showCommPanel ? '#fff' : T.accent, fontSize: sz(22), fontWeight: 700, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
+            <button onClick={openNewOrderForm} style={{ width: sz(42), height: sz(42), borderRadius: sz(12), border: 'none', background: T.accentLight, color: T.accent, fontSize: sz(22), fontWeight: 700, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
           </div>
           {showCommPanel && (() => {
-            const THIN = ' ';
             const commTotal = calcTotal(commPricing);
-            const commUpdatePrice = (key, val) => setCommPricing((prev) => prev.map((it) => it.platform === key ? { ...it, price: val.replace(/\s/g, '').replace(/\++$/, '+') } : it));
+            const commUpdatePrice = (key, val) => setCommPricing((prev) => prev.map((it) => it.platform === key ? { ...it, price: displayToPrice(val) } : it));
             const commHandleKey = (key, btn) => {
               if (btn === '✓') { setActiveKey(null); return; }
               const item = commPricing.find((it) => it.platform === key) || { price: '' };
-              const disp = item.price.replace(/\+/g, `${THIN}+${THIN}`);
-              const pos = priceCursorRef.current[key] ?? disp.length;
-              let newDisp = disp, newPos = pos;
-              if (btn === '⌫') {
-                if (pos === 0) return;
-                let start = pos - 1, end = pos;
-                const ch = newDisp[start];
-                if (ch === THIN || ch === '+') {
-                  while (start > 0 && (newDisp[start - 1] === THIN || newDisp[start - 1] === '+')) start--;
-                  while (end < newDisp.length && (newDisp[end] === THIN || newDisp[end] === '+')) end++;
-                }
-                newDisp = newDisp.slice(0, start) + newDisp.slice(end); newPos = start;
-              } else if (btn === '+') {
-                const rawBefore = disp.slice(0, pos).replace(new RegExp(THIN, 'g'), '');
-                if (!rawBefore.endsWith('+')) { const ins = `${THIN}+${THIN}`; newDisp = disp.slice(0, pos) + ins + disp.slice(pos); newPos = pos + ins.length; }
-              } else if (btn === '.') {
-                const rawBefore = disp.slice(0, pos).replace(new RegExp(THIN, 'g'), '');
-                if (!rawBefore.split('+').pop().includes('.')) { newDisp = disp.slice(0, pos) + '.' + disp.slice(pos); newPos = pos + 1; }
-              } else { newDisp = disp.slice(0, pos) + btn + disp.slice(pos); newPos = pos + 1; }
-              priceCursorRef.current[key] = newPos;
-              commUpdatePrice(key, newDisp.replace(new RegExp(THIN, 'g'), ''));
+              const disp = priceToDisplay(item.price);
+              const input = priceInputRefs.current[`comm_${key}`];
+              const start = input?.selectionStart ?? priceCursorRef.current[key] ?? disp.length;
+              const end = input?.selectionEnd ?? start;
+              const { nextDisplay, nextPos } = editPriceDisplay(disp, start, end, btn);
+              priceCursorRef.current[key] = nextPos;
+              commUpdatePrice(key, nextDisplay);
+              restorePriceCursor('comm', key, nextPos);
             };
             const inputStyle = { width: '100%', padding: `${sz(9)}px ${sz(12)}px`, borderRadius: sz(10), border: `1.5px solid ${T.border}`, background: T.bg, color: T.text, fontSize: sz(13), fontFamily: 'Tajawal, sans-serif', outline: 'none', boxSizing: 'border-box', marginBottom: sz(10), direction: t.dir };
             const KB_ROWS = [['7', '8', '9', '⌫'], ['4', '5', '6', '+'], ['1', '2', '3', '.'], ['0', '✓']];
@@ -665,9 +888,21 @@ export default function AdminDashboard() {
                       return (
                         <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: sz(6), direction: 'ltr' }}>
                           <div style={{ background: T.accentLight, color: T.accent, borderRadius: sz(8), padding: `${sz(4)}px ${sz(8)}px`, fontSize: sz(9), fontWeight: 700, minWidth: sz(72), textAlign: 'center', flexShrink: 0 }}>{p.label}</div>
-                          <div onPointerDown={() => { const disp = item.price.replace(/\+/g, `${THIN}+${THIN}`); priceCursorRef.current[p.key] = disp.length; setActiveKey(p.key); }} style={{ flex: 1, background: activeKey === p.key ? T.accentLight : T.bg, borderRadius: sz(10), padding: `${sz(7)}px ${sz(10)}px`, direction: 'ltr', border: `1.5px solid ${activeKey === p.key ? T.accent : 'transparent'}`, cursor: 'text', position: 'relative', zIndex: 102, transition: 'background 0.15s, border-color 0.15s' }}>
-                            <div ref={(el) => { priceDisplayRefs.current[`comm_${p.key}`] = el; }} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); const disp = item.price.replace(/\+/g, `${THIN}+${THIN}`); const pos = getCaretPos(e.currentTarget, e.clientX, e.clientY); priceCursorRef.current[p.key] = Math.min(pos, disp.length); setActiveKey(p.key); }} style={{ background: 'none', width: '100%', fontSize: sz(13), color: item.price ? T.text : T.textMuted, fontFamily: 'monospace', cursor: 'text', letterSpacing: '-0.3px', minHeight: `${sz(18)}px`, display: 'block', pointerEvents: 'auto', textAlign: 'right', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{(() => { const disp = item.price.replace(/\+/g, `${THIN}+${THIN}`); if (activeKey !== p.key) return disp || <span style={{ color: T.textMuted }}>0.00</span>; const pos = priceCursorRef.current[p.key] ?? disp.length; return <>{disp.slice(0, pos)}<span className="lamar-comm-cursor" />{disp.slice(pos) || ''}</>; })()}</div>
-                          </div>
+                          <input
+                            ref={(el) => { priceInputRefs.current[`comm_${p.key}`] = el; }}
+                            value={priceToDisplay(item.price)}
+                            onFocus={(e) => { setActiveKey(p.key); priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                            onClick={(e) => { priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                            onSelect={(e) => { priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/[^\d.+\s]/g, '');
+                              priceCursorRef.current[p.key] = e.target.selectionStart ?? cleaned.length;
+                              commUpdatePrice(p.key, cleaned);
+                            }}
+                            placeholder="0.00"
+                            inputMode="decimal"
+                            style={{ flex: 1, background: activeKey === p.key ? T.accentLight : T.bg, borderRadius: sz(10), padding: `${sz(7)}px ${sz(10)}px`, direction: 'ltr', border: `1.5px solid ${activeKey === p.key ? T.accent : 'transparent'}`, cursor: 'text', position: 'relative', zIndex: 102, transition: 'background 0.15s, border-color 0.15s', width: '100%', fontSize: sz(13), color: item.price ? T.text : T.textMuted, fontFamily: 'monospace', letterSpacing: '-0.3px', minHeight: `${sz(18)}px`, outline: 'none', boxSizing: 'border-box', textAlign: 'right' }}
+                          />
                           {calc !== null && <div style={{ fontSize: sz(11), fontWeight: 700, color: T.gold, minWidth: sz(70), textAlign: 'right', direction: 'ltr', flexShrink: 0 }}>{formatMoney(calc, 'EUR')}</div>}
                         </div>
                       );
@@ -729,53 +964,74 @@ export default function AdminDashboard() {
 
   if (view === 'detail' && selectedOrder) {
     const order = selectedOrder;
-    const items = order.pricing?.items?.length ? order.pricing.items : defaultPricingItems();
-    const updatePrice = (key, val) => queueSave({ ...order, pricing: { items: items.map((it) => (it.platform === key ? { ...it, price: val.replace(/\s/g, '').replace(/\++$/, '+') } : it)) } });
-    const THIN = ' ';
+    const items = pricingDraftOrderId === order.id ? pricingDraft : pricingItemsFromOrder(order);
+    const updatePrice = (key, val) => {
+      const baseItems = pricingDraftOrderId === order.id ? pricingDraft : pricingItemsFromOrder(order);
+      setPricingDraft(baseItems.map((it) => (it.platform === key ? { ...it, price: displayToPrice(val) } : it)));
+      setPricingDraftOrderId(order.id);
+      setPricingDraftDirty(true);
+      setPricingSaveState('idle');
+    };
+    const savePricingChanges = async () => {
+      if (!pricingDraftDirty || pricingSaveState === 'saving') return;
+      const nextItems = pricingDraftOrderId === order.id ? pricingDraft : pricingItemsFromOrder(order);
+      const updated = { ...order, pricing: { items: nextItems } };
+      setPricingSaveState('saving');
+      setOrders((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setSelectedOrder(updated);
+      try {
+        await saveOrder(store, updated);
+        setPricingDraftDirty(false);
+        setActiveKey(null);
+        setPricingSaveState('saved');
+        if (pricingSaveFeedbackTimerRef.current) clearTimeout(pricingSaveFeedbackTimerRef.current);
+        pricingSaveFeedbackTimerRef.current = setTimeout(() => setPricingSaveState('idle'), 1800);
+      } catch (error) {
+        setPricingSaveState('error');
+        setPricingDraftDirty(true);
+        setToast(error?.message || String(error));
+      }
+    };
+    const appendPriceToDraft = (platform, value) => {
+      const baseItems = pricingDraftOrderId === order.id ? pricingDraft : pricingItemsFromOrder(order);
+      setPricingDraft(baseItems.map((item) => (
+        item.platform === platform ? { ...item, price: item.price ? `${item.price}+${value}` : value } : item
+      )));
+      setPricingDraftOrderId(order.id);
+      setPricingDraftDirty(true);
+      setPricingSaveState('idle');
+    };
     const handleKeyInput = (key, btn) => {
       if (btn === '✓') { setActiveKey(null); return; }
       const item = items.find((it) => it.platform === key) || { price: '' };
-      const disp = item.price.replace(/\+/g, `${THIN}+${THIN}`);
-      const pos = priceCursorRef.current[key] ?? disp.length;
-      let newDisp = disp;
-      let newPos = pos;
-
-      if (btn === '⌫') {
-        if (pos === 0) return;
-        let start = pos - 1;
-        const ch = newDisp[start];
-        let end = pos;
-        if (ch === THIN || ch === '+') {
-          while (start > 0 && (newDisp[start - 1] === THIN || newDisp[start - 1] === '+')) start--;
-          while (end < newDisp.length && (newDisp[end] === THIN || newDisp[end] === '+')) end++;
-        }
-        newDisp = newDisp.slice(0, start) + newDisp.slice(end);
-        newPos = start;
-      } else if (btn === '+') {
-        const rawBefore = disp.slice(0, pos).replace(new RegExp(THIN, 'g'), '');
-        if (!rawBefore.endsWith('+')) {
-          const ins = `${THIN}+${THIN}`;
-          newDisp = disp.slice(0, pos) + ins + disp.slice(pos);
-          newPos = pos + ins.length;
-        }
-      } else if (btn === '.') {
-        const rawBefore = disp.slice(0, pos).replace(new RegExp(THIN, 'g'), '');
-        const segment = rawBefore.split('+').pop();
-        if (!segment.includes('.')) {
-          newDisp = disp.slice(0, pos) + '.' + disp.slice(pos);
-          newPos = pos + 1;
-        }
-      } else {
-        newDisp = disp.slice(0, pos) + btn + disp.slice(pos);
-        newPos = pos + 1;
-      }
-
-      priceCursorRef.current[key] = newPos;
-      updatePrice(key, newDisp.replace(new RegExp(THIN, 'g'), ''));
+      const disp = priceToDisplay(item.price);
+      const input = priceInputRefs.current[`detail_${key}`];
+      const start = input?.selectionStart ?? priceCursorRef.current[key] ?? disp.length;
+      const end = input?.selectionEnd ?? start;
+      const { nextDisplay, nextPos } = editPriceDisplay(disp, start, end, btn);
+      priceCursorRef.current[key] = nextPos;
+      updatePrice(key, nextDisplay);
+      restorePriceCursor('detail', key, nextPos);
     };
     const totalCalc = calcTotal(items);
     const cartTotal = sumCartPrices(order.sheinCart?.items);
     const cartCurrency = inferCartCurrency(order);
+    const isPricingSaving = pricingSaveState === 'saving';
+    const pricingSaveButtonLabel = pricingSaveState === 'saving'
+      ? 'Saving...'
+      : pricingSaveState === 'saved'
+        ? 'Saved'
+        : pricingSaveState === 'error'
+          ? 'Try again'
+          : t.save;
+    const pricingSaveButtonBg = pricingSaveState === 'saved'
+      ? '#4caf50'
+      : pricingSaveState === 'error'
+        ? '#e05c5c'
+        : pricingDraftDirty
+          ? T.accent
+          : T.border;
+    const pricingSaveButtonColor = pricingDraftDirty || pricingSaveState === 'saving' || pricingSaveState === 'saved' || pricingSaveState === 'error' ? '#fff' : T.textMuted;
     return (
       <>
       <style>{`
@@ -832,9 +1088,9 @@ export default function AdminDashboard() {
           <div style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: sz(10) }}>
               <div style={{ display: 'flex', gap: sz(6) }}>
-                <button onClick={() => startVoice(order)} style={{ padding: `${sz(6)}px ${sz(10)}px`, borderRadius: sz(8), border: 'none', background: isRecording ? '#e05c5c' : T.accentLight, color: isRecording ? '#fff' : T.accent, fontSize: sz(12), cursor: 'pointer' }}>{isRecording ? t.recording : t.voice}</button>
+                <button onClick={() => startVoice(order, appendPriceToDraft)} style={{ padding: `${sz(6)}px ${sz(10)}px`, borderRadius: sz(8), border: 'none', background: isRecording ? '#e05c5c' : T.accentLight, color: isRecording ? '#fff' : T.accent, fontSize: sz(12), cursor: 'pointer' }}>{isRecording ? t.recording : t.voice}</button>
                 <label style={{ padding: `${sz(6)}px ${sz(10)}px`, borderRadius: sz(8), background: T.accentLight, color: T.accent, fontSize: sz(12), cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
-                  {t.images}<input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => handleImageUpload(order, e)} />
+                  {t.images}<input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => handleImageUpload(order, e, appendPriceToDraft)} />
                 </label>
               </div>
               <div style={{ fontSize: sz(13), fontWeight: 700, color: T.text }}>{t.pricing}</div>
@@ -857,17 +1113,38 @@ export default function AdminDashboard() {
                 const item = items.find((it) => it.platform === p.key) || { price: '', platform: p.key };
                 const calc = calcPrice(p.key, item.price);
                 return (
-                  <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: sz(6), direction: 'ltr' }}>
-                    <div style={{ background: T.accentLight, color: T.accent, borderRadius: sz(8), padding: `${sz(4)}px ${sz(8)}px`, fontSize: sz(9), fontWeight: 700, minWidth: sz(72), textAlign: 'center', flexShrink: 0 }}>{p.label}</div>
-                    <div onClick={(e) => { const disp = item.price.replace(/\+/g, ' + '); const rect = e.currentTarget.getBoundingClientRect(); const relX = e.clientX - rect.left - sz(10); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); ctx.font = `${sz(13)}px monospace`; const cw = ctx.measureText('0').width; const pos = Math.min(Math.max(0, Math.round(relX / cw)), disp.length); priceCursorRef.current[p.key] = pos; setActiveKey(p.key); }} style={{ flex: 1, background: activeKey === p.key ? T.accentLight : T.bg, borderRadius: sz(10), padding: `${sz(7)}px ${sz(10)}px`, direction: 'ltr', border: `1.5px solid ${activeKey === p.key ? T.accent : 'transparent'}`, cursor: 'text', position: 'relative', zIndex: 102, transition: 'background 0.15s, border-color 0.15s' }}>
-                      <div style={{ background: 'none', width: '100%', fontSize: sz(13), color: item.price ? T.text : T.textMuted, fontFamily: 'monospace', cursor: 'text', letterSpacing: '-0.3px', minHeight: `${sz(18)}px`, display: 'block', pointerEvents: 'none', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{(() => { const disp = item.price.replace(/\+/g, ' + '); if (activeKey !== p.key) return disp || <span style={{ color: T.textMuted }}>0.00</span>; const pos = priceCursorRef.current[p.key] ?? disp.length; return <>{disp.slice(0, pos)}<span className="lamar-fake-cursor" />{disp.slice(pos) || ''}</>; })()}</div>
-                    </div>
-                    {calc !== null && <div style={{ fontSize: sz(11), fontWeight: 700, color: T.gold, minWidth: sz(70), textAlign: 'center', direction: 'ltr' }}>{formatMoney(calc, cartCurrency)}</div>}
+                  <div key={p.key} style={{ display: 'flex', alignItems: 'flex-start', gap: sz(6), direction: 'ltr', flexWrap: 'wrap' }}>
+                    <div style={{ background: T.accentLight, color: T.accent, borderRadius: sz(8), padding: `${sz(4)}px ${sz(8)}px`, fontSize: sz(9), fontWeight: 700, minWidth: sz(72), textAlign: 'center', flexShrink: 0, marginTop: sz(5) }}>{p.label}</div>
+                    <textarea
+                      ref={(el) => { priceInputRefs.current[`detail_${p.key}`] = el; resizePriceEditor(el); }}
+                      value={priceToDisplay(item.price)}
+                      onFocus={(e) => { resizePriceEditor(e.currentTarget); setActiveKey(p.key); priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                      onClick={(e) => { priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                      onSelect={(e) => { priceCursorRef.current[p.key] = e.currentTarget.selectionStart ?? priceToDisplay(item.price).length; }}
+                      onChange={(e) => {
+                        const cleaned = e.target.value.replace(/[^\d.+\s]/g, '');
+                        priceCursorRef.current[p.key] = e.target.selectionStart ?? cleaned.length;
+                        updatePrice(p.key, cleaned);
+                        resizePriceEditor(e.currentTarget);
+                      }}
+                      placeholder="0.00"
+                      inputMode="decimal"
+                      rows={1}
+                      style={{ flex: '1 1 170px', minWidth: sz(150), background: activeKey === p.key ? T.accentLight : T.bg, borderRadius: sz(10), padding: `${sz(7)}px ${sz(10)}px`, direction: 'ltr', border: `1.5px solid ${activeKey === p.key ? T.accent : 'transparent'}`, cursor: 'text', position: 'relative', zIndex: 102, transition: 'background 0.15s, border-color 0.15s', width: '100%', fontSize: sz(13), color: item.price ? T.text : T.textMuted, fontFamily: 'monospace', letterSpacing: '-0.3px', minHeight: `${sz(34)}px`, maxHeight: `${sz(92)}px`, lineHeight: 1.45, outline: 'none', boxSizing: 'border-box', resize: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                    />
+                    {calc !== null && <div style={{ flex: '1 0 100%', fontSize: sz(11), fontWeight: 700, color: T.gold, minWidth: sz(70), textAlign: 'right', direction: 'ltr' }}>{formatMoney(calc, cartCurrency)}</div>}
                   </div>
                 );
               })}
             </div>
             {totalCalc > 0 && <div style={{ marginTop: sz(12), paddingTop: sz(10), borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', direction: 'ltr' }}><div style={{ fontSize: sz(12), color: T.textMuted }}>{t.total2}</div><div style={{ fontSize: sz(15), fontWeight: 800, color: T.gold, direction: 'ltr' }}>{formatMoney(totalCalc, cartCurrency)}</div></div>}
+            <button
+              onClick={savePricingChanges}
+              disabled={isPricingSaving || (!pricingDraftDirty && pricingSaveState !== 'error')}
+              style={{ width: '100%', marginTop: sz(12), padding: sz(11), borderRadius: sz(11), border: 'none', background: pricingSaveButtonBg, color: pricingSaveButtonColor, fontSize: sz(12), fontWeight: 800, cursor: pricingDraftDirty && !isPricingSaving ? 'pointer' : 'default', fontFamily: 'Tajawal, sans-serif', transition: 'background 0.18s ease, color 0.18s ease, transform 0.12s ease', transform: isPricingSaving ? 'scale(0.99)' : 'scale(1)' }}
+            >
+              {pricingSaveButtonLabel}
+            </button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: sz(8) }}>
             <button onClick={() => setView('invoice')} style={{ padding: sz(11), borderRadius: sz(11), border: 'none', background: T.gold, color: '#fff', fontSize: sz(12), fontWeight: 700, cursor: 'pointer' }}>{t.invoice}</button>

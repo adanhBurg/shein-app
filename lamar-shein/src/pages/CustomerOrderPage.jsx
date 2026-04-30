@@ -37,7 +37,7 @@ export default function CustomerOrderPage() {
   const [storeData, setStoreData] = useState(null);
   const [cachedPhoto, setCachedPhoto] = useState(() => localStorage.getItem(`lamar_store_photo_${store}`) || '');
   const [storeError, setStoreError] = useState('');
-  const [step, setStep] = useState(1);
+  const [editingProfile, setEditingProfile] = useState(false);
   const [profile, setProfile] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(profileKey)) || { name: '', phone: '' };
@@ -57,6 +57,10 @@ export default function CustomerOrderPage() {
 
   const storeValid = store && isValidStoreSlug(store);
   const showReveal = false;
+  const profileComplete = !!(profile.name.trim() && profile.phone.trim()) && !editingProfile;
+
+  const isValidPhone = (v) => /^\d{10}$/.test(v.trim());
+  const isValidLink = (v) => { try { const url = new URL(/^https?:\/\//i.test(v) ? v : `https://${v}`); return url.hostname.includes('.'); } catch { return false; } };
 
   useEffect(() => {
     document.documentElement.lang = t.lang;
@@ -104,8 +108,8 @@ export default function CustomerOrderPage() {
   const handleSubmit = async () => {
     const nextErrors = {};
     if (!profile.name.trim()) nextErrors.name = true;
-    if (!profile.phone.trim()) nextErrors.phone = true;
-    if (!order.link.trim()) nextErrors.orderLink = true;
+    if (!isValidPhone(profile.phone)) nextErrors.phone = true;
+    if (!isValidLink(order.link.trim())) nextErrors.orderLink = true;
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
       shakeIt('order');
@@ -147,6 +151,7 @@ export default function CustomerOrderPage() {
       setSubmitStage('idle');
       setCreatedOrderNumber(created.orderNumber || '');
       setCreatedOrder(created);
+      setEditingProfile(false);
       setSent(true);
     } catch (error) {
       setSending(false);
@@ -187,8 +192,7 @@ export default function CustomerOrderPage() {
     setCreatedOrderNumber('');
     setCreatedOrder(null);
     setOrder({ link: '' });
-    localStorage.removeItem(profileKey);
-    setProfile({ name: '', phone: '' });
+    setEditingProfile(false);
   };
 
   const inputStyle = (hasError) => ({
@@ -345,16 +349,33 @@ export default function CustomerOrderPage() {
       </Header>
       <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className={shake === 'order' ? 'shake' : ''}>
-          <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>{t.nameLabel}</label>
-            <input style={inputStyle(errors.name)} value={profile.name} onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))} placeholder={t.namePlaceholder} type="text" autoComplete="name" />
-            {errors.name && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>{t.phoneLabel}</label>
-            <input style={{ ...inputStyle(errors.phone), direction: 'ltr', textAlign: 'left' }} value={profile.phone} onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))} placeholder={t.phonePlaceholder} type="tel" autoComplete="tel" />
-            {errors.phone && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
-          </div>
+          {profileComplete ? (
+            <div style={{ background: T.card, borderRadius: 14, padding: '12px 14px', border: `1.5px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', background: T.accentLight, border: `2px solid ${T.accent}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.accent, fontWeight: 800, fontSize: 18, flexShrink: 0 }}>
+                {profile.name.trim()[0].toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: T.text, textAlign: isRTL ? 'right' : 'left' }}>{profile.name}</div>
+                <div style={{ fontSize: 12, color: T.textMuted, direction: 'ltr', textAlign: isRTL ? 'right' : 'left' }}>{profile.phone}</div>
+              </div>
+              <button onClick={() => setEditingProfile(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.accent, fontSize: 12, fontWeight: 700, fontFamily: 'Tajawal, sans-serif', flexShrink: 0, padding: '4px 8px' }}>
+                {t.notYou}
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t.nameLabel}</label>
+                <input style={inputStyle(errors.name)} value={profile.name} onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))} placeholder={t.namePlaceholder} type="text" autoComplete="name" />
+                {errors.name && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t.phoneLabel}</label>
+                <input style={{ ...inputStyle(errors.phone), direction: 'ltr', textAlign: 'left' }} value={profile.phone} onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} placeholder={t.phonePlaceholder} type="tel" inputMode="numeric" autoComplete="tel" />
+                {errors.phone && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.phoneError}</div>}
+              </div>
+            </>
+          )}
           <div>
             <label style={labelStyle}>{t.linkLabel}</label>
             <div style={{ position: 'relative' }}>
@@ -370,7 +391,7 @@ export default function CustomerOrderPage() {
                 </svg>
               </button>
             </div>
-            {errors.orderLink && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.required}</div>}
+            {errors.orderLink && <div style={{ color: '#e05c5c', fontSize: 11, textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}>{t.linkError}</div>}
           </div>
         </div>
         <div style={{ background: T.accentLight, borderRadius: 10, padding: '10px 14px', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
